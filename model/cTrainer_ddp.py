@@ -625,7 +625,7 @@ class Trainer():
                 
                 ############################ Generator Update #################
 
-                loss_g = self.Generator_Update(modelD, modelG, img, y, lambda_t,
+                loss_g = self.Generator_Update(modelD, modelG, cond, y, lambda_t,
                                                 step=Step)  # all losses are already reduced after this step
                 
 
