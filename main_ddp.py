@@ -6,13 +6,13 @@ Created on Thu Nov 24 10:43:33 2022
 @author: brochetc
 """
 
-from omegaconf import OmegaConf, open_dict
 import torch
+import yaml
 import os, sys
 import memutils.memory_consumption as memco
 from torch.distributed import init_process_group, destroy_process_group
 
-import model.trainer_ddp as trainer
+import model.cTrainer_ddp as trainer
 from torch import distributed as dist
 
 import plot.plotting_functions as plf
@@ -24,9 +24,7 @@ import metrics4arome.spectrum_analysis as Spectral
 
 from expe_init import get_expe_parameters
 from distributed import (
-    get_rank,
     synchronize,
-    get_world_size,
     is_main_gpu
 )
 
@@ -62,10 +60,15 @@ if not os.path.exists(config.output_dir + "/samples"):
 if config.conditional:
     from model.conditionalSockets import vqSocket
 
-    VQparams = config.VQparams 
+    VQparams_file = config.VQparams_file
+
+    with open(VQparams_file) as f:
+        VQparams = yaml.safe_load(f)['VQparams']
 
     Embedder = vqSocket(VQparams, discrete_level = config.discrete_level)
     Embedder.cuda()
+
+    import model.cStylegan2 as RN
 
 else:
     if config.model == 'resnet_aa':
@@ -243,7 +246,7 @@ modelG, modelD, modelG_ema, mem_g, mem_d, mem_opt, mem_cuda = TRAINER.instantiat
 ##########################   (and online testing)  ############################
 ###############################################################################
 
-TRAINER.fit_(modelG, modelD, modelG_ema=modelG_ema)
+TRAINER.fit_(modelG, modelD, Embedder, modelG_ema=modelG_ema)
 
 ###############################################################################
 ############################## Light POST-PROCESSING ##########################

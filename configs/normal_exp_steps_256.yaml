@@ -1,12 +1,12 @@
 # Path
 data_dir: /scratch/mrmn/brochetc/GAN_2D/datasets_full_indexing/IS_1_1.0_0_0_0_0_0_256_done/
-output_dir: /scratch/mrmn/brochetc/Exp_StyleGAN/
+output_dir: /scratch/mrmn/brochetc/GAN_2D/Exp_Codebook/
 mean_file: mean_with_8_var.npy        # file in data_dir  : Mean of variables (see compute_mean_max.py)  
 max_file: max_with_8_var.npy          # file in data_dir  : Max = Max-Mean of variables (see compute_mean_max.py) 
 id_file: IS_method_labels_8_var.csv   # file in data_dir  : labels ID file
 
 # Path for experiments
-SET_NUM: 100   # run test jobs in Set_2
+SET_NUM: 1   # run test jobs in Set_2
 pretrained_model: 0 # step at which pretrained model have been saved
 which_experiment: -1 # index of the experiment to run if pretrained_model is activated # not really used anymore
 max_relaunch: 0 # number of times we relaunch the expe after timeout
@@ -22,54 +22,29 @@ slurm_docker_run_perso: slurm-docker-run_perso-DDP # slurm file in home_dir
 
 very_small_exp: False 
 small_exp: False
-normal_exp_steps: 200
+normal_exp_steps: 5
 
 ensemble:
-  --epochs_num : [1]
-  --batch_size: [16]
+  --epochs_num : [25]
+  --batch_size: [32]
   --lr_D: [0.002]
   --lr_G: [0.002]
   --g_channels: [3]
   --d_channels: [3]
   --var_names: ["['u','v','t2m']"]
-  --total_steps: [200]
+  --total_steps: [360000]
   --conditional: [True]
   --discrete_level: [0]
   --path_batch_shrink: [2]
   --model: ['stylegan2']
   --train_type: ['stylegan']
   --latent_dim: [512]
-  --pretrained_model: [0]
+  --pretrained_model: [-1]
   --use_noise: [True]
   --crop_indexes: ["[78,206,55,183]"]
   --crop_size: ["[128,128]"]
   --full_size: ["[256,256]"]
   --channel_multiplier: [1] 
   
-VQparams:
-  ddconfig:
-    double_z: false
-    z_channels: 3
-    resolution: 128
-    in_channels: 3
-    out_ch: 3
-    ch: 128
-    ch_mult:
-    - 1
-    - 2
-    - 4
-    num_res_blocks: 2
-    attn_resolutions: []
-    dropout: 0.0
-  lossconfig:
-    target: ldm.modules.losses.vqperceptual.VQLPIPSWithDiscriminator
-    params:
-      disc_conditional: false
-      disc_in_channels: 3
-      disc_start: 500000
-      disc_weight: 0.6
-      codebook_weight: 1.0
-  n_embed: 8192
-  embed_dim: 3
-  ckpt_path: '/where/are/you.pth'
+VQparams_file: '/home/mrmn/brochetc/aWeatherCodebook/configs/VQgan.yml'
   

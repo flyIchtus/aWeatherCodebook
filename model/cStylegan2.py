@@ -3,169 +3,14 @@ import random
 
 import torch
 from torch import nn
-from torch.nn import functional as F
-import numpy as np
 
-from  op import FusedLeakyReLU, fused_leaky_relu, upfirdn2d, conv2d_gradfix
-from conditionalSockets import LinearSocket, vqSocket
+from  op import FusedLeakyReLU, conv2d_gradfix
+from model.conditionalSockets import LinearSocket
 
 library = {'stylegan2' : {'G' :  'Generator', 'D' : 'Discriminator'}}
 
+from model.stylegan_base_blocks import PixelNorm, EqualConv2d, EqualLinear, Upsample, Blur
 
-class PixelNorm(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, input):
-        return input * torch.rsqrt(torch.mean(input ** 2, dim=1, keepdim=True) + 1e-8)
-
-
-def make_kernel(k):
-    k = torch.tensor(k, dtype=torch.float32)
-
-    if k.ndim == 1:
-        k = k[None, :] * k[:, None]
-
-    k /= k.sum()
-
-    return k
-
-
-class Upsample(nn.Module):
-    def __init__(self, kernel, factor=2):
-        super().__init__()
-
-        self.factor = factor
-        kernel = make_kernel(kernel) * (factor ** 2)
-        self.register_buffer("kernel", kernel)
-
-        p = kernel.shape[0] - factor
-
-        pad0 = (p + 1) // 2 + factor - 1
-        pad1 = p // 2
-
-        self.pad = (pad0, pad1)
-
-    def forward(self, input):
-        
-        out = upfirdn2d(input, self.kernel, up=self.factor, down=1, pad=self.pad)
-
-        return out
-
-
-class Downsample(nn.Module):
-    def __init__(self, kernel, factor=2):
-        super().__init__()
-
-        self.factor = factor
-        kernel = make_kernel(kernel)
-        self.register_buffer("kernel", kernel)
-
-        p = kernel.shape[0] - factor
-
-        pad0 = (p + 1) // 2
-        pad1 = p // 2
-
-        self.pad = (pad0, pad1)
-
-    def forward(self, input):
-        out = upfirdn2d(input, self.kernel, up=1, down=self.factor, pad=self.pad)
-
-        return out
-
-
-class Blur(nn.Module):
-    def __init__(self, kernel, pad, upsample_factor=1):
-        super().__init__()
-
-        kernel = make_kernel(kernel)
-
-        if upsample_factor > 1:
-            kernel = kernel * (upsample_factor ** 2)
-
-        self.register_buffer("kernel", kernel)
-
-        self.pad = pad
-
-    def forward(self, input):
-        out = upfirdn2d(input, self.kernel, pad=self.pad)
-
-        return out
-
-
-class EqualConv2d(nn.Module):
-    def __init__(
-        self, in_channel, out_channel, kernel_size, stride=1, padding=0, bias=True
-    ):
-        super().__init__()
-
-        self.weight = nn.Parameter(
-            torch.randn(out_channel, in_channel, kernel_size, kernel_size)
-        )
-        self.scale = 1 / math.sqrt(in_channel * kernel_size ** 2)
-
-        self.stride = stride
-        self.padding = padding
-
-        if bias:
-            self.bias = nn.Parameter(torch.zeros(out_channel))
-
-        else:
-            self.bias = None
-
-    def forward(self, input):
-        out = conv2d_gradfix.conv2d(
-            input,
-            self.weight * self.scale,
-            bias=self.bias,
-            stride=self.stride,
-            padding=self.padding,
-        )
-
-        return out
-
-    def __repr__(self):
-        return (
-            f"{self.__class__.__name__}({self.weight.shape[1]}, {self.weight.shape[0]},"
-            f" {self.weight.shape[2]}, stride={self.stride}, padding={self.padding})"
-        )
-
-
-class EqualLinear(nn.Module):
-    def __init__(
-        self, in_dim, out_dim, bias=True, bias_init=0, lr_mul=1, activation=None
-    ):
-        super().__init__()
-
-        self.weight = nn.Parameter(torch.randn(out_dim, in_dim).div_(lr_mul))
-
-        if bias:
-            self.bias = nn.Parameter(torch.zeros(out_dim).fill_(bias_init))
-
-        else:
-            self.bias = None
-
-        self.activation = activation
-
-        self.scale = (1 / math.sqrt(in_dim)) * lr_mul
-        self.lr_mul = lr_mul
-
-    def forward(self, input):
-        if self.activation:
-            out = F.linear(input, self.weight * self.scale)
-            out = fused_leaky_relu(out, self.bias * self.lr_mul)
-
-        else:
-            out = F.linear(
-                input, self.weight * self.scale, bias=self.bias * self.lr_mul
-            )
-
-        return out
-
-    def __repr__(self):
-        return (
-            f"{self.__class__.__name__}({self.weight.shape[1]}, {self.weight.shape[0]})"
-        )
 
 
 class ModulatedConv2d(nn.Module):
@@ -422,9 +267,12 @@ class ToRGB(nn.Module):
 
 
 class condMapping(nn.Module):
-    def __init__(self, style_dim, mlp_inj_level, VQ_params, discrete_level=0, mid_ch=3, mid_h=32, mid_w=32):
+    def __init__(self, style_dim, mlp_inj_level, lr_mlp, n_mlp, discrete_level=0, 
+                 mid_ch=3, mid_h=32, mid_w=32,
+                 ):
         super().__init__()
         layers = [PixelNorm()]
+        self.mlp_inj_level = mlp_inj_level
         
         for i in range(mlp_inj_level):
             layers.append(
@@ -435,7 +283,7 @@ class condMapping(nn.Module):
         # injection of conditional input by concatenation on this level
         layers.append(
             EqualLinear(
-                2 * style_dim, style_dim, lr_mul=lr_mlp, activation="fused_lrelu"
+               style_dim, style_dim, lr_mul=lr_mlp, activation="fused_lrelu"
             )
         )
 
@@ -447,18 +295,18 @@ class condMapping(nn.Module):
             )
 
 
-        self.style = nn.ModuleList(*layers)
-        self.Linear = LinearSocket(mid_ch * (discrete_level==1), mid_h, mid_w)
+        self.style = nn.ModuleList(layers)
+        self.Linear = LinearSocket(mid_ch + (discrete_level==1) , mid_h, mid_w, style_dim)
     
     def forward(self, s, y, lambda_t):
 
         y = self.Linear(y)
-
-        o = self.style[:mlp_inj_level](o)
+        for m in self.style[:self.mlp_inj_level]:
+            s = m(s)
             
-        o = o + lambda_t * y
-        o = self.style[mlp_inj_level:](o)
-
+        o = s + lambda_t * y
+        for m in self.style[self.mlp_inj_level:]:
+            o = m(o)
         return o
 
 
@@ -482,7 +330,7 @@ class Generator(nn.Module):
         self.style_dim = style_dim
         self.mlp_inj_level = mlp_inj_level
 
-        self.style = condMapping(syle_dim, mlp_inj_level)
+        self.style = condMapping(style_dim, mlp_inj_level, lr_mlp, n_mlp)
 
         self.channels = {
             4: 512,
@@ -780,10 +628,9 @@ class Discriminator(nn.Module):
             EqualLinear(channels[4], 1),
         )
 
-        self.LinearEmbed = LinearSocket(mid_ch + (discrete_level==1), mid_h, mid_w, activation = "fused_lrelu")
+        self.LinearEmbed = LinearSocket(mid_ch + (discrete_level==1), mid_h, mid_w, channels[4])
         self.final_c_linear = nn.Sequential(
             EqualLinear(channels[4] * 4 * 4, channels[4], activation="fused_lrelu"),
-            EqualLinear(channels[4], 1),
         )
 
     def forward(self, input, condition, lambda_t):
@@ -811,6 +658,6 @@ class Discriminator(nn.Module):
 
         y = self.LinearEmbed(condition)
         #we want to align embeddings with condition
-        c_out = torch.dot(y,c_out)
+        c_out = torch.sum(y*c_out, dim=(1,),keepdims=True)
         
         return uc_out + lambda_t * c_out

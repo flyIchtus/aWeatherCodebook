@@ -20,7 +20,9 @@ from torch.utils.data.distributed import DistributedSampler
 from torchvision.transforms import ToTensor, Normalize, Compose
 from filelock import FileLock
 from multiprocessing import Manager
+import random
 
+#random.seed(0)
 ################ reference dictionary to know what variables to sample where
 ################ do not modify unless you know what you are doing 
 
@@ -130,10 +132,10 @@ class ISDataset(Dataset):
             cond_path = os.path.join(self.data_dir, self.labels.iloc[idx, 0])
             cond_name = self.labels.iloc[idx, 0]
             if self.sample_method == 'coords':
-                crop_X0 = CI[0]
-                crop_X1 = CI[1]
-                crop_Y0 = CI[2]
-                crop_Y1 = CI[3]
+                crop_X0 = self.CI[0]
+                crop_X1 = self.CI[1]
+                crop_Y0 = self.CI[2]
+                crop_Y1 = self.CI[3]
             if self.sample_method == 'random':
                 crop_X0 = np.random.randint(0, high=self.full_size[0] - self.crop_size[0])
                 crop_X1 = crop_X0 + self.crop_size[0]
@@ -147,18 +149,19 @@ class ISDataset(Dataset):
             position = self.labels.iloc[idx, 2]
 
             #### finding target sample
-            cond_member = self.labels.loc[cond_name,'Member']
-            cond_date = self.labels.loc[cond_name,'Date']
-            cond_lt = self.labels.loc[cond_name,'LeadTime']
+            cond_member = self.labels.iloc[idx,5] #member
+            cond_date = self.labels.iloc[idx,6] #date
+            cond_lt = self.labels.iloc[idx,4] #leadtime
             other_members = [i for i in range(16) if i!=cond_member]
-            mb = random.sample(other_members,1)
+            mb = random.sample(other_members,1)[0]
+
+            #print(cond_member, mb)
+            target_df = self.labels[(self.labels['Date']==str(cond_date)) & (self.labels['LeadTime']==int(cond_lt)) & (self.labels['Member']==int(mb))]
 
             target_path = os.path.join(self.data_dir, 
-                            self.labels.loc[(self.labels['Date']==cond_date)\
-                             & (self.labels['LeadTime']==cond_lt) \
-                             & (self.labels['Member']=mb)]['Name'])
+                            target_df['Name'].values[0])
 
-            target = np.float32(np.load(target_path + '.npy'))
+            target = np.float32(np.load(target_path + '.npy')) \
                     [self.VI, crop_X0:crop_X1, crop_Y0:crop_Y1]
 
             cond = cond.transpose((1, 2, 0))
@@ -169,7 +172,7 @@ class ISDataset(Dataset):
                 target = self.transform(target)
 
 
-            self.cache.cache(idx, target, cond, importance, position)
+            #self.cache.cache(idx, target, cond, importance, position)
 
         return target, cond, importance, position
 

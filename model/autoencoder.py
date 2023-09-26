@@ -4,12 +4,12 @@ import torch.nn.functional as F
 from contextlib import contextmanager
 import importlib
 
-from quantize import VectorQuantizer2 as VectorQuantizer
+from model.quantize import VectorQuantizer2 as VectorQuantizer
 
-from model import Encoder, Decoder
+from model.encoders_decoders import Encoder, Decoder
 from distributions import DiagonalGaussianDistribution
 
-from util import instantiate_from_config
+from model.util import instantiate_from_config
 from omegaconf import OmegaConf, open_dict
 
 import os
@@ -109,7 +109,7 @@ class VQModel(nn.Module):
         self.image_key = image_key
         self.encoder = Encoder(**ddconfig)
         self.decoder = Decoder(**ddconfig)
-        self.loss = instantiate_from_config(lossconfig)
+        #self.loss = instantiate_from_config(lossconfig)
         self.quantize = VectorQuantizer(n_embed, embed_dim, beta=0.25,
                                         remap=remap,
                                         sane_index_shape=sane_index_shape)
@@ -128,9 +128,9 @@ class VQModel(nn.Module):
                 f"{self.__class__.__name__}: Using per-batch resizing in range {batch_resize_range}.")
 
         self.use_ema = use_ema
-        if self.use_ema:
-            self.model_ema = LitEma(self)
-            print(f"Keeping EMAs of {len(list(self.model_ema.buffers()))}.")
+        #if self.use_ema:
+        #    self.model_ema = LitEma(self)
+        #    print(f"Keeping EMAs of {len(list(self.model_ema.buffers()))}.")
 
         if ckpt_path is not None:
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
@@ -460,7 +460,7 @@ class VQModelInterface(VQModel):
         return dec
 
 
-class AutoencoderKL(pl.LightningModule):
+class AutoencoderKL(nn.Module):
     def __init__(self,
                  ddconfig,
                  lossconfig,

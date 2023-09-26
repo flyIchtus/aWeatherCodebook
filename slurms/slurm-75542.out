@@ -1,6 +1,0 @@
-SLURM_HOSTLIST: node003
-/var/spool/slurm/d/job75542/slurm_script: line 59: UID: readonly variable
-Start Horovod on the primary node...
-srun -w node003 --nodes=1 --ntasks-per-node=1 --ntasks=1 /home/mrmn/poulainauzeaul/stylegan4arome/gan_horovod/slurms/slurm-docker-run_perso primary stylegan4arome_2.0 24985 2920 /home/mrmn/poulainauzeaul/styleganPNRIA2.0/gan/ /scratch/mrmn/brochetc/GAN_2D/Exp_StyleGAN_final/ /home/mrmn/poulainauzeaul/styleganPNRIA2.0/gan/create_f_samples.py
-slurmstepd: error: execve(): /home/mrmn/poulainauzeaul/stylegan4arome/gan_horovod/slurm-docker-run_perso: No such file or directory
-srun: error: node003: task 0: Exited with exit code 2

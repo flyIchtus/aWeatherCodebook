@@ -23,9 +23,6 @@ import yaml
 from pathlib import Path
 
 
-
-
-
 def check_file(file):
     # Search/download file (if necessary) and return path
     file = str(file)  # convert to str()
@@ -86,8 +83,14 @@ def str2inttuple(li):
     else : 
         raise ValueError("li argument must be a string or a list, not '{}'".format(type(li)))
 
+def str2VQparams(str):
+    """
+    convert string to dictionary
+    """
 
+    dico = {}
 
+    return dico
 
 
 # very_small_exp = True
@@ -134,7 +137,7 @@ def read_yamlconfig(config_file_abs_path) :
     print("config_file_abs_path", config_file_abs_path)
 
     if Path(config_file_abs_path).is_file() :  # exists
-        with open( config_file_abs_path) as f: 
+        with open(config_file_abs_path) as f: 
             optyaml = yaml.safe_load(f)  # load hyps
 
     very_small_exp = optyaml["very_small_exp"]
@@ -146,9 +149,9 @@ def read_yamlconfig(config_file_abs_path) :
     use_noise = ensemble['--use_noise'][0]
     all_domain = True if sum(str2intlist(ensemble['--crop_indexes'][0])[1::2])-\
                             sum(str2intlist(ensemble['--crop_indexes'][0])[0::2])==512 else False
-    VQparams = optyaml["VQparams"]
+    VQparams = optyaml["VQparams_file"]
 
-    return  optyaml, very_small_exp, small_exp, normal_exp_steps, ensemble, monovar, use_noise, all_domain , config_file_abs_path, VQparams
+    return  optyaml, very_small_exp, small_exp, normal_exp_steps, ensemble, monovar, use_noise, all_domain , config_file_abs_path
 
 def get_dirs(home_dir):
 
@@ -209,10 +212,10 @@ def get_expe_parameters():
     parser = argparse.ArgumentParser()
 
     # Paths
-    parser.add_argument('--data_dir', type=str,         default="/scratch/mrmn/brochetc/GAN_2D/datasets_full_indexing/IS_1_1.0_0_0_0_0_0_256_done/" )
-    parser.add_argument('--mean_file', type=str,        default="mean_with_8_var.npy" )
-    parser.add_argument('--max_file', type=str,         default="max_with_8_var.npy" )
-    parser.add_argument('--id_file', type=str,          default="IS_method_labels_8_var.csv" )
+    parser.add_argument('--data_dir', type=str,default="/scratch/mrmn/brochetc/GAN_2D/datasets_full_indexing/IS_1_1.0_0_0_0_0_0_256_done/" )
+    parser.add_argument('--mean_file', type=str,default="mean_with_8_var.npy" )
+    parser.add_argument('--max_file', type=str,default="max_with_8_var.npy" )
+    parser.add_argument('--id_file', type=str, default="IS_method_labels_8_var.csv" )
     parser.add_argument('--pretrained_model', type=int, default=0)
 
     # if not dirs["interactive"] : 
@@ -241,11 +244,11 @@ def get_expe_parameters():
     # conditional arguments
     parser.add_argument('--conditional', type=str2bool, default = True)
     parser.add_argument('--condition_vars', type=str2list, default = ['u','v', 't2m'])
-    parser.add_argument('--start_step', type=int, default=2000)
-    parser.add_argument('--stop_step', type=int, default=4000)
+    parser.add_argument('--lambda_start_step', type=int, default=2000)
+    parser.add_argument('--lambda_stop_step', type=int, default=4000)
     parser.add_argument('--discrete_level', type=int, default=0)
-    parser.add_argumetn('--mlp_inj_level', type=int, default=1)
-
+    parser.add_argument('--mlp_inj_level', type=int, default=1)
+    parser.add_argument('--VQparams_file', type=str, default=None)
     
     #architectural choices
     
@@ -387,10 +390,10 @@ def make_dicts(ensemble,  option='cartesian'):
      
     assert keys<=allowed_args
     prod_list=[]
+    list_items = list(ensemble.values())
     if option=='cartesian':
-        for item in product(*(list(ensemble.values()))):
+        for item in product(*(list_items)):
             prod_list.append(dict((key[2:],i) for key, i in zip(ensemble.keys(),item)))
-
     return prod_list
 
 def sanity_check(config) :
@@ -598,7 +601,7 @@ if __name__=="__main__":
     home_dir = os.path.dirname(os.path.realpath(__file__))
     slurm_dir = os.path.dirname(os.path.realpath(__file__)) +'/slurms/'
 
-    dirs, very_small_exp, small_exp, normal_exp_steps, ensemble, monovar, use_noise, all_domain, config_file_abs_path, VQparams = get_dirs(home_dir)
+    dirs, very_small_exp, small_exp, normal_exp_steps, ensemble, monovar, use_noise, all_domain, config_file_abs_path = get_dirs(home_dir)
     dirs = AttrDict(dirs)
 
 
@@ -642,12 +645,7 @@ if __name__=="__main__":
     ensemble['--id_file']=[dirs.id_file]
     # normalement même pas obligé de mettre cette ligne vu qu'il est déjà dans ensemble
     ensemble['--pretrained_model']=dirs.ensemble["--pretrained_model"]
-    ensemble['--VQparams']=dirs.VQparams
-
-    # if not dirs["interactive"] : 
-        # change output_dir default path for experiments set
-    # parser.add_argument('--output_dir', type=str, \
-    #                     default=os.getcwd()+'/')
+    ensemble['--VQparams_file']=[dirs.VQparams_file]
     
     if not dirs.auto_relaunch:
         expe_list = make_dicts(ensemble)

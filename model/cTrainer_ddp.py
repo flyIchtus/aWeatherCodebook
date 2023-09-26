@@ -6,11 +6,8 @@ Created on Wed Jun 18 11:11:24 2023
 @author: rabaultj
 """
 
-from os import cpu_count
 from tqdm import tqdm
 import time
-from torch.utils.data import DataLoader, DistributedSampler
-
 ########## NN libs ############################################################
 
 import numpy as np
@@ -20,7 +17,6 @@ from time import perf_counter
 from functools import wraps
 
 ########## MP libs ############################################################
-import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from distributed import (
     get_rank,
@@ -388,13 +384,15 @@ class Trainer():
             file.write('\n')
             file.close()
 
-    def plot(self, Step, modelG, conditions, samples_z):
+    def plot(self, Step, modelG, Embedder, conditions, samples_z,lambda_t):
         print('Plotting')
 
         modelG.eval()
 
         with torch.no_grad():
-            batch, _, _ = modelG([samples_z, conditions, lambda_t])
+            y = Embedder(conditions)
+            y = y.repeat(3,1,1,1)
+            batch, _, _ = modelG([samples_z], y, lambda_t)
 
         modelG.train()
 
@@ -429,16 +427,20 @@ class Trainer():
                        self.config.output_dir + \
                        "/models/SchedGen_{}".format(Step))
 
-    def save_samples(self, number, Step, modelG, conditions, lambda_t):
+    def save_samples(self, number, Step, modelG, Embedder, conditions, lambda_t):
         print("Saving samples")
         # Moving back and forth the model to cpu and cuda is absolutely NOT optimal but seems a 
         # good solution to prevent cuda running out of memory
         # modelG.cpu()
+        
+        with torch.no_grad():
+            y = Embedder(conditions)
+            y = y.repeat(number // conditions.shape[0],1,1,1) 
         for i in range(16):
             z = torch.empty(number, self.config.latent_dim).normal_().cuda()
             # z = torch.empty(number,self.config.latent_dim).normal_().cpu()
             with torch.no_grad():
-                out = modelG([z, conditions, lambda_t])[0].cpu().numpy()
+                out = modelG([z], y, lambda_t)[0].cpu().numpy()
 
             np.save(self.config.output_dir + '/samples/_Fsample_{}_{}.npy'.format(Step, i), out)
         # modelG.cuda()
@@ -446,15 +448,15 @@ class Trainer():
 
     ########################### TRAINING FUNCTIONS ############################
 
-    def Discrim_Update(self, modelD, modelG, samples, conditions, step=0):
+    def Discrim_Update(self, modelD, modelG, samples, conditions, lambda_t,step=0):
 
         requires_grad(modelG, False)
         requires_grad(modelD, True)
 
 
-        loss_0 = self.D_backward(samples, conditions, modelD, modelG,
-                                 self.config.latent_dim,
-                                 mixing=self.config.mixing,
+        loss_0 = self.D_backward(samples, conditions, modelD, modelG, lambda_t,
+                                 self.config.latent_dim, 
+                                 mixing=self.config.mixing
                                  )
 
         
@@ -463,7 +465,7 @@ class Trainer():
 
         if self.config.train_type == 'stylegan' and step % self.config.d_reg_every == 0:
             loss_1 = GAN.Discrim_Regularize(samples, conditions, modelD,
-                                            self.config.r1, self.config.d_reg_every)
+                                            self.config.r1, self.config.d_reg_every, lambda_t)
             #self.optim_D.step()
 
             loss_0 = merge_dict(loss_0, loss_1)
@@ -471,16 +473,16 @@ class Trainer():
         self.optim_D.step()
         return loss_0
 
-    def Generator_Update(self, modelD, modelG, samples, conditions, step=0):
+    def Generator_Update(self, modelD, modelG, samples, conditions, lambda_t, step=0):
 
         requires_grad(modelG, True)
         requires_grad(modelD, False)
 
         loss_0 = self.G_backward(samples, conditions,
                                  modelD,
-                                 modelG,
+                                 modelG,lambda_t,
                                  self.config.latent_dim,
-                                 mixing=self.config.mixing,
+                                 mixing=self.config.mixing
                                  )
         #self.optim_G.step()
 
@@ -495,6 +497,7 @@ class Trainer():
                                                                 self.mean_path_length,
                                                                 modelG,
                                                                 conditions,
+                                                                lambda_t,
                                                                 self.config.latent_dim,
                                                                 self.config.g_reg_every,
                                                                 self.config.path_batch_shrink,
@@ -526,7 +529,7 @@ class Trainer():
         z = torch.empty((sample_num, self.config.latent_dim)).normal_().cuda()
 
         with torch.no_grad():
-            fake_samples, _, _ = modelG([z,y,lambda_t])
+            fake_samples, _, _ = modelG([z],y,lambda_t)
         metric_results = {}
 
         for metr in self.test_metrics:
@@ -557,8 +560,8 @@ class Trainer():
 
         assert self.instance_flag  # security flag avoiding meddling with uncomplete init
 
-        samples_z = torch.empty(3 * (self.config.plot_samples /lambda_t/ 4), self.config.latent_dim).normal_().cuda()
-        cond0 = self.train_dataloader[0][:self.config.plot_samples//4].cuda()
+        samples_z = torch.empty(3 * (self.config.plot_samples // 4), self.config.latent_dim).normal_().cuda()
+        cond0 = next(iter(self.train_dataloader))[1][:self.config.plot_samples//4].cuda()
         ### generator EMA will be evaluated on samples_z for plotting
 
         if modelG_ema is not None:
@@ -589,8 +592,8 @@ class Trainer():
             step_tmp = 0
 
             if is_main_gpu():
-                gpu_memory = torch.cuda.memory_allocated() / 1e9
-            # print(f"\nEpoch {epoch + 1}/{self.config.epochs_num}    GPU_mem {gpu_memory:.2f}G")
+                #gpu_memory = torch.cuda.memory_allocated() / 1e9
+                #print(f"\nEpoch {epoch + 1}/{self.config.epochs_num}    GPU_mem {gpu_memory:.2f}G")
 
                 loop = tqdm(enumerate(self.train_dataloader), total=len(self.train_dataloader),
                         desc=f"Epoch {epoch + 1}/{self.config.epochs_num}", unit="batch",
@@ -665,12 +668,12 @@ class Trainer():
 
             if self.save_epoch > 0 and (
                     epoch % self.save_epoch == 0 or epoch == self.config.epochs_num - 1) and is_main_gpu():
-                self.save_samples(self.config.sample_num, true_epoch, modelG_ema)
+                self.save_samples(self.config.sample_num, true_epoch, modelG_ema,Embedder, cond0, lambda_t)
                 if self.config.pretrained_model > 0:  # we don't want to save the first step when using a pretrained
                     if not (true_epoch == self.config.pretrained_model and epoch == 0):
                         self.save_models(true_epoch, modelG, modelD, modelG_ema)
                 else:
-                    self.save_models(true_epoch, modelG, modelD, modelG_ema)
+                    self.save_models(true_epoch+1, modelG, modelD, modelG_ema)
 
             ############### testing samples at test epoch ##################
 
@@ -682,12 +685,12 @@ class Trainer():
 
             if self.config.log_epoch > 0 and (
                     epoch % self.config.log_epoch == 0 or epoch == self.config.epochs_num - 1) and is_main_gpu():
-                self.log(true_epoch)
+                self.log(true_epoch+1)
 
             ############### plotting distribution at plot epoch ############
             if self.plot_epoch > 0 and (
                     epoch % self.plot_epoch == 0 or epoch == self.config.epochs_num - 1) and is_main_gpu():
-                self.plot(true_epoch, modelG_ema, cond0s, samples_z)
+                self.plot(true_epoch+1, modelG_ema, Embedder, cond0, samples_z, lambda_t)
                 
                 
             if self.config.total_steps > 1000:
