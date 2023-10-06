@@ -621,11 +621,11 @@ if __name__=="__main__":
 
     previous_sets = len(glob(dirs.output_dir+'*Set*'))
     
-    SET_NUM = 2 if very_small_exp or small_exp else \
-            5 if all_domain else\
-            3 if monovar else\
-            4 if not use_noise else\
-            1
+    SET_NUM = dirs.SET_NUM #2 if very_small_exp or small_exp else \
+    #        5 if all_domain else\
+    #        3 if monovar else\
+    #        4 if not use_noise else\
+    #        1
     
     # je suis pas méga sûr de ce qui suit donc je commente pour garder mon arborescence
     #if dirs.SET_NUM>0:

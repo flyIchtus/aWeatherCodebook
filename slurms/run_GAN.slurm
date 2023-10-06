@@ -29,7 +29,7 @@
 
 #SBATCH --job-name='stylegan-test'
 #SBATCH --nodes=001 # laisseer ça même si node2 dans partition
-#SBATCH --partition=node1
+#SBATCH --partition=node3
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:v100:1
 #SBATCH --time=0-24:00:00

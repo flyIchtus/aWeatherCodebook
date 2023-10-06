@@ -4,7 +4,7 @@ set -eu
 
 CWD=stylegan4arome_2.0
 SCRIPTDIR=/home/mrmn/brochetc/aWeatherCodebook/
-DATA_DIR=/scratch/mrmn/brochetc/GAN_2D/datasets_full_indexing/IS_1_1.0_0_0_0_0_0_256_large_lt_done/
+DATA_DIR=/scratch/mrmn/brochetc/GAN_2D/datasets_full_indexing/
 OUTPUT_DIR=/scratch/mrmn/brochetc/GAN_2D/Exp_Codebook/
 
 DOCKFILE=$2
