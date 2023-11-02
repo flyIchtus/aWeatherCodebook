@@ -166,6 +166,10 @@ class ISDataset(Dataset):
             target_path = os.path.join(self.data_dir, 
                             target_df['Name'].values[0])
 
+
+            print(target_path, cond_path)
+            print(cond_member, mb)
+
             target = np.float32(np.load(target_path + '.npy')) \
                     [self.VI, crop_X0:crop_X1, crop_Y0:crop_Y1]
 
