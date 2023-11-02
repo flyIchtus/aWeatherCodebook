@@ -119,6 +119,7 @@ def Discrim_Step_StyleGAN(samples, cond, modelD, modelG,lambda_t,
         loss_dict["d"] = d_loss
         loss_dict["real_score"] = real_pred.mean()
         loss_dict["fake_score"] = fake_pred.mean()
+        loss_dict["inst_d"] = torch.tensor([0.0], dtype=torch.float32)
         loss_dict["r1"] = torch.tensor([0.0], dtype=torch.float32)
 
         for param in modelD.parameters():
@@ -143,9 +144,24 @@ def Discrim_Regularize(samples, cond, modelD, r1, d_reg_every, lambda_t) :
         
     (r1 / 2 * r1_loss * d_reg_every + 0 * real_pred[0]).backward()
     
-    
     loss_dict["r1"] = r1_loss
     
+    return loss_dict
+
+def Instance_Discrim_Reg(samples, cond, modelD, id_reg, d_reg_every, lambda_t, temperature):
+
+    loss_dict = {}
+
+    samples.requires_grad = True
+
+    contrast_loss = modelD(samples, cond, lambda_t, instance_disc=True, temperature=temperature)
+    for param in modelD.parameters():
+        param.grad=None
+
+    (id_reg / 2 * contrast_loss * d_reg_every).backward()
+
+    loss_dict["inst_d"] = contrast_loss
+
     return loss_dict
 
 def Generator_Step_StyleGAN(samples,

@@ -660,7 +660,10 @@ class Discriminator(nn.Module):
             out_cond = out_cond.view(batch, -1)
             out_cond = self.final_c_linear(out_cond)
 
-            instance_reg = ID.tripletNTXent(y, out_inp, out_cond, temperature) # anchor, positive, negative could be triplet loss with temperature used as margin
+            instance_reg = ID.tripletNTXent(y, out_inp, out_cond, temperature) # anchor, positive, negative --> could be triplet loss with temperature used as margin
+
+            return instance_reg
+
         stddev = out.view(
             group, -1, self.stddev_feat, channel // self.stddev_feat, height, width
         )
@@ -679,5 +682,4 @@ class Discriminator(nn.Module):
         else:
             out_inp = torch.sum(y * out_inp, dim=(1,),keepdims=True)
         
-        res = uc_out + lambda_t * out_inp + instance_reg if instance_disc else uc_out + lambda_t * out_inp
-        return res
+        return uc_out + lambda_t * out_inp

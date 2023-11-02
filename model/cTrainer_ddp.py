@@ -456,16 +456,22 @@ class Trainer():
 
         
         
-        #self.optim_D.step()
+        self.optim_D.step()
 
         if self.config.train_type == 'stylegan' and step % self.config.d_reg_every == 0:
             loss_1 = GAN.Discrim_Regularize(samples, conditions, modelD,
                                             self.config.r1, self.config.d_reg_every, lambda_t)
-            #self.optim_D.step()
 
             loss_0 = merge_dict(loss_0, loss_1)
 
-        self.optim_D.step()
+            self.optim_D.step()
+
+            if self.config.instance_discrim:
+                loss_2 = GAN.Instance_Discrim_Reg(samples, condition, modelD, self.config.id_reg, self.config.d_reg_every, lambda_t, self.config.temperature)
+
+                loss_0 = merge_dict(loss_0, loss_1)
+
+                self.optim_D.step()
         return loss_0
 
     def Generator_Update(self, modelD, modelG, samples, conditions, lambda_t, step=0):

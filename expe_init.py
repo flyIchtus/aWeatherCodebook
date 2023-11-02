@@ -250,6 +250,9 @@ def get_expe_parameters():
     parser.add_argument('--discrete_level', type=int, default=0)
     parser.add_argument('--mlp_inj_level', type=int, default=1)
     parser.add_argument('--VQparams_file', type=str, default=None)
+    parser.add_argument('--instance_discrim', type=str2bool, default=False)
+    parser.add_argument('--id_reg', type=float, default = 0.001, help='regul intensity for instance discrimination')
+    parser.add_argument('--temperature', type=float, default=0.07, help='control scalar for contrastive loss (either temperature or margin)')
     
     #architectural choices
     
