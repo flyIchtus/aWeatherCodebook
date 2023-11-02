@@ -119,6 +119,7 @@ def Discrim_Step_StyleGAN(samples, cond, modelD, modelG,lambda_t,
         loss_dict["d"] = d_loss
         loss_dict["real_score"] = real_pred.mean()
         loss_dict["fake_score"] = fake_pred.mean()
+        loss_dict["r1"] = torch.tensor([0.0], dtype=torch.float32)
 
         for param in modelD.parameters():
             param.grad=None
@@ -169,7 +170,8 @@ def Generator_Step_StyleGAN(samples,
     g_loss = g_nonsaturating_loss(fake_pred)
 
     loss_dict["g"] = g_loss
-
+    loss_dict["path"] = torch.tensor([0.0], dtype=torch.float32)
+    loss_dict["path_length"] = torch.tensor([0.0], dtype=torch.float32)
     
                 
     g_loss.backward()

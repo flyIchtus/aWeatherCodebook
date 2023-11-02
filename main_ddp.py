@@ -11,6 +11,7 @@ import yaml
 import os, sys
 import memutils.memory_consumption as memco
 from torch.distributed import init_process_group, destroy_process_group
+from collections import OrderedDict
 
 import model.cTrainer_ddp as trainer
 from torch import distributed as dist
@@ -162,12 +163,34 @@ if config.pretrained_model > 0:
     i = config.pretrained_model
     print(i, config.output_dir + f'/models/{str(i).zfill(6)}.pt')
     ckpt = torch.load(config.output_dir + f'/models/{str(i).zfill(6)}.pt')
-    modelG.load_state_dict(ckpt["g"])
-    modelD.load_state_dict(ckpt["d"])
 
-    if config.train_type == 'stylegan':
+    if 'module' in list(ckpt["g"].items())[0][0][:7]: #juglling with Pytorch versioning and different module packaging
+        ckpt_adapt = OrderedDict()
+        ckpt_adapt_ema = OrderedDict()
+        for k,kema in zip(ckpt["g"].keys(), ckpt["g_ema"]):
+            k0,k0ema = k[7:], kema[7:]
+            ckpt_adapt[k0] = ckpt["g"][k]
+            ckpt_adapt_ema[k0ema] = ckpt["g_ema"][k]
+
+        modelG.load_state_dict(ckpt_adapt)
+        modelG_ema.load_state_dict(ckpt_adapt_ema)
+        modelG_ema.eval()
+
+    else:
+        modelG.load_state_dict(ckpt["g"])
         modelG_ema.load_state_dict(ckpt["g_ema"])
+        modelG_ema.eval()
 
+    if 'module' in list(ckpt["d"].items())[0][0][:7]: #juglling with Pytorch versioning and different module packaging
+        ckpt_adapt = OrderedDict()
+        for k in ckpt["d"].keys():
+            k0 = k[7:]
+            ckpt_adapt[k0] = ckpt["d"][k]
+        modelD.load_state_dict(ckpt_adapt)
+
+
+    else:
+        modelD.load_state_dict(ckpt["d"])
 else:
 
     ckpt = None
@@ -201,7 +224,7 @@ setattr(METR, "spectral_dist_torch_"+"_".join(str(var_name) for var_name in conf
                         METR.metric2D('Power Spectral Density RMSE', 
                             Spectral.PSD_compare_torch, 
                             [str(var_name) for var_name in config.var_names], 
-                            names = [f'PSD{str(var)}' for var in config.var_names],
+                            names = [f"PSD{str(var[1:-1])}" for var in config.var_names],
                             ))
 
 setattr(METR, "W1_center", 
@@ -223,13 +246,15 @@ test_metr = ["W1_Random", "SWD_metric_torch"] # if not config.mean_pert else ["W
 #if not config.mean_pert:
 test_metr = test_metr + ["spectral_dist_torch_"+"_".join(str(var_name) for var_name in config.var_names)] # same (or at least need some work)
 
+ensemble_metr = ["spread_diff_torch", "mean_diff_torch"]
+
 ###############################################################################
 ######################### LOADING models and Data #############################
 ###############################################################################
 
 print('creating trainer', flush=True)
 TRAINER = trainer.Trainer(config,criterion="W1_center",\
-                        test_metrics=test_metr)
+                        test_metrics=test_metr, test_ensemble_metrics=ensemble_metr)
 
 
 print('instantiating', flush=True)

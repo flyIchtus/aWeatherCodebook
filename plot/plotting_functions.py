@@ -220,7 +220,7 @@ def plot_metrics_from_csv(log_path,filename, metrics_list=[]):
     st=figure.suptitle("Metrics", fontsize="xx-large")
     for i,metric in enumerate(metrics_list):
         ax=plt.subplot(N_metrics//3+1,3,i+1)
-        ax.plot(df['Step'], df[metric])
+        ax.plot(np.array(df['Step']), np.array(df[metric]))
         ax.set_ylabel(metric, fontsize="x-large")
     plt.xlabel('Iteration step')
     figure.tight_layout()
@@ -246,7 +246,7 @@ def plot_metrics_on_same_plot(log_path,filename, metrics_list=[], targets=[]):
             label='W1_crop'
         else: 
             label=metric
-        plt.plot(df['Step'], df[metric], label=label, color=colors[i])
+        plt.plot(np.array(df['Step']), np.array(df[metric]), label=label, color=colors[i])
     plt.hlines(targets,xmin=0,xmax=49000,colors=colors[:len(metrics_list)], linestyles='--')
     plt.grid()
     plt.legend()

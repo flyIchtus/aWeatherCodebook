@@ -8,16 +8,16 @@ from torch.utils.cpp_extension import load
 
 
 module_path = os.path.dirname(__file__)
-print('compiling sources for upfirdn2d')
+#print('compiling sources for upfirdn2d')
 
 upfirdn2d_op = load(
     "upfirdn2d",
     sources=[
         os.path.join(module_path, "upfirdn2d.cpp"),
         os.path.join(module_path, "upfirdn2d_kernel.cu"),
-    ],
+    ],verbose=True,
 )
-print('sources compiled')
+#print('sources compiled')
 
 class UpFirDn2dBackward(Function):
     @staticmethod

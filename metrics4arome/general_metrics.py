@@ -42,5 +42,43 @@ def orography_RMSE(fake_batch, test_data, usetorch=False):
         res=np.sqrt(((fake_orog-orog)**2).mean())
     return res
 
-########################### TODO : Structure functions ###############################
+def spread_diff(real, fake, maxs=None, scale=1.0/0.95, usetorch=True):
+
+    if usetorch:
+
+        maxs = torch.tensor(maxs)
+
+        diff = torch.std(real, dim=0) - torch.std(fake, dim=0) #delta degree of freedom is 1 by default in torch
+
+        diff = scale * maxs.to(diff.device) * diff.mean(dim=(-2,-1))
+
+    else :
+
+        maxs = np.array(maxs)
+
+        diff = np.std(real, axis=0, ddof=1) - np.std(fake, axis=0, ddof=1) # delta degree of freedom is 0 by default in numpy
+
+        diff = scale * maxs * diff.mean(axis=(-2,-1))
+
+    return diff
+
+def mean_diff(real, fake, maxs=None, scale=1.0/0.95, usetorch=True):
+
+    if usetorch:
+
+        maxs = torch.tensor(maxs)
+
+        diff = torch.mean(real, dim=0) - torch.mean(fake, dim=0)
+
+        diff = scale * maxs.to(diff.device) * diff.mean(dim=(-2,-1))
+
+    else :
+
+        maxs = np.array(maxs)
+
+        diff = np.mean(real, axis=0) - np.mean(fake, axis=0) 
+
+        diff = scale * maxs * diff.mean(axis=(-2,-1))
+
+    return diff
 

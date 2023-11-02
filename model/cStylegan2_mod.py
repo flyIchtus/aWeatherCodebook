@@ -642,15 +642,6 @@ class Discriminator(nn.Module):
         #print("before std ", out.shape)
         batch, channel, height, width = out.shape
         group = min(batch, self.stddev_group)
-
-        stddev = out.view(
-            group, -1, self.stddev_feat, channel // self.stddev_feat, height, width
-        )
-        stddev = torch.sqrt(stddev.var(0, unbiased=False) + 1e-8)
-        stddev = stddev.mean([2, 3, 4], keepdims=True).squeeze(2)
-        stddev = stddev.repeat(group, 1, height, width)
-
-        out = torch.cat([out, stddev], 1)
         
         #print('std ', out.shape)
         out = self.final_conv(out)
@@ -670,7 +661,14 @@ class Discriminator(nn.Module):
             out_cond = self.final_c_linear(out_cond)
 
             instance_reg = ID.tripletNTXent(y, out_inp, out_cond, temperature) # anchor, positive, negative could be triplet loss with temperature used as margin
-        
+        stddev = out.view(
+            group, -1, self.stddev_feat, channel // self.stddev_feat, height, width
+        )
+        stddev = torch.sqrt(stddev.var(0, unbiased=False) + 1e-8)
+        stddev = stddev.mean([2, 3, 4], keepdims=True).squeeze(2)
+        stddev = stddev.repeat(group, 1, height, width)
+
+        out = torch.cat([out, stddev], 1)
 
         uc_out = self.final_uc_linear(out)
         

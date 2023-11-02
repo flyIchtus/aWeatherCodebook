@@ -29,6 +29,7 @@ from distributed import (
 import metrics4arome as METR
 import plot.plotting_functions as plotFunc
 import data.dataset_handler_ddp as DSH
+import data.ensemble_dataset_handler as eDSH
 
 import model.GAN_logic as GAN
 
@@ -178,7 +179,7 @@ class Trainer():
 
     ############ timer decoration
 
-    def __init__(self, config, criterion, test_metrics={}, \
+    def __init__(self, config, criterion, test_metrics={}, test_ensemble_metrics={},\
                  metric_verbose=True):
 
         self.test_dataloader = None
@@ -187,15 +188,9 @@ class Trainer():
         self.config = config
         self.instance_flag = False
 
-        # self.test_metrics = []
-        # for name in test_metrics:
-        #    print("name ", name)
-        #    print("getattr ", getattr(METR, name))
-        #    print("type getattr ", type(getattr(METR, name)))
-        #    self.test_metrics.append(getattr(METR, name))
         self.test_metrics = [getattr(METR, name) for name in test_metrics]
-        # print("test_met ", test_metrics)
-        # print("self.test_met ", self.test_metrics)
+        self.test_ensemble_metrics = [getattr(METR, name) for name in test_ensemble_metrics]
+
         self.criterion = getattr(METR, criterion)
 
         self.metric_verbose = metric_verbose
@@ -213,7 +208,7 @@ class Trainer():
 
         self.loss_dict = {}
 
-        self.Metrics = {name: [] for metr in self.test_metrics for name in metr.names}
+        self.Metrics = {name: [] for metr in self.test_metrics + self.test_ensemble_metrics for name in metr.names}
         self.crit_List = []
 
     ########################## GETTING-READY FUNCTIONS ########################
@@ -268,14 +263,14 @@ class Trainer():
                                           crop_indexes=self.crop_indexes,
                                           mean_file=self.config.mean_file,
                                           max_file=self.config.max_file,
-                                          id_file=self.config.id_file)
+                                          id_file=self.config.id_file_train)
 
-        self.Dl_test = DSH.ISData_Loader(self.config.data_dir, self.config.test_samples,
+        self.Dl_test = eDSH.EnsembleData_Loader(self.config.data_dir, self.config.test_samples,
                                          self.config.var_names, self.config.crop_size, self.config.full_size,
                                          crop_indexes=self.crop_indexes,
                                          mean_file=self.config.mean_file,
                                          max_file=self.config.max_file,
-                                         id_file=self.config.id_file)
+                                         id_file=self.config.id_file_test)
 
         kwargs = {'pin_memory': True}
 
@@ -514,37 +509,67 @@ class Trainer():
         """
         test samples in parallel for each metric
         iterates through test dataset with DataIter
+        DataIter should be instance of EnsembleDataloader
         """
 
         modelG.eval()
-        real_samples, real_cond, _, _ = next(DataIter)
+        real_samples = next(DataIter)
+        sample_num = self.config.test_samples // real_samples.shape[0]
         real_samples = real_samples.cuda()
-        real_cond = real_cond.cuda()
-        with torch.no_grad():
-            y = Embedder(real_cond)
-        sample_num = min(real_samples.shape[0], self.config.test_samples)
+        fake_samples = torch.empty_like(real_samples).cuda()
 
-        # using sample_num samples PER GPU to compute scores
-
-        z = torch.empty((sample_num, self.config.latent_dim)).normal_().cuda()
-
-        with torch.no_grad():
-            fake_samples, _, _ = modelG([z],y,lambda_t)
+    
         metric_results = {}
+        res = {}
 
-        for metr in self.test_metrics:
-            res = metr(real_samples, fake_samples, select=False)
-            assert torch.isfinite(res).all()
+        for s in range(real_samples.shape[0]):
+            with torch.no_grad():
+                y = Embedder(real_samples[s])        # using sample_num samples PER GPU to compute scores
+
+                z = torch.empty((sample_num, self.config.latent_dim)).normal_().cuda()
+
+                fake_samples[s], _, _ = modelG([z],y,lambda_t)
 
             if is_main_gpu():
+                for metr in self.test_ensemble_metrics:    
+                    
+                    if s==0:
+                        res[metr.long_name] = metr(real_samples[s], fake_samples[s], select=False)
+                    else :
+                        res[metr.long_name] = res[metr.long_name] + metr(real_samples[s], fake_samples[s], select=False)
+                    assert torch.isfinite(res[metr.long_name]).all()
+
+        if is_main_gpu():
+            for metr in self.test_ensemble_metrics:
+                res[metr.long_name] = res[metr.long_name] / real_samples.shape[0]
+                for i, name in enumerate(metr.names):
+                    self.Metrics[name].append(res[metr.long_name][i].item())
+                metric_results[metr.long_name] = res[metr.long_name]
+     
+        #reshaping samples to produce "unconditional scores"
+
+        real_list = [r.squeeze() for r in real_samples.chunk(real_samples.shape[0], dim=0)]
+        fake_list = [f.squeeze() for f in fake_samples.chunk(fake_samples.shape[0], dim=0)]
+
+        print(real_list[0].shape)
+
+        real_samples = torch.cat(real_list, dim=0)
+        fake_samples = torch.cat(fake_list, dim=0)
+
+        for metr in self.test_metrics:
+
+            if is_main_gpu():
+                res = metr(real_samples, fake_samples, select=False)
+                assert torch.isfinite(res).all()
+
                 for i, name in enumerate(metr.names):
                     self.Metrics[name].append(res[i].item())
                 metric_results[metr.long_name] = res
 
         if is_main_gpu():
-            print("\t Instances  " + "  ".join([name.ljust(9) for metr in self.test_metrics for name in metr.names]))
+            print("\t Instances  " + "  ".join([name.ljust(9) for metr in self.test_metrics + self.test_ensemble_metrics for name in metr.names]))
             print(f"\t {len(real_samples):<9}", end="")
-            for metr in self.test_metrics:
+            for metr in self.test_metrics + self.test_ensemble_metrics:
                 for val in metric_results[metr.long_name]:
                     print(f"{   val.item():.4f}".ljust(9), end="")
             print()
@@ -561,31 +586,38 @@ class Trainer():
         assert self.instance_flag  # security flag avoiding meddling with uncomplete init
 
         samples_z = torch.empty(3 * (self.config.plot_samples // 4), self.config.latent_dim).normal_().cuda()
-        cond0 = next(iter(self.train_dataloader))[1][:self.config.plot_samples//4].cuda()
+        cond0 = next(iter(self.test_dataloader))[:self.config.plot_samples//4,0].cuda()
         ### generator EMA will be evaluated on samples_z for plotting
 
         if modelG_ema is not None:
             G_module = modelG
         
         synchronize()
-        Step = 0
-
+        
         self.mean_path_length = torch.tensor([0.0], dtype=torch.float32)
 
         accum = 0.5 ** (32 / (10 * 1000))  # EMA parameter
 
         N_batch = len(self.train_dataloader)
 
-        if is_main_gpu():
-            print("Starting training for", self.config.epochs_num, "epochs...", flush=True)
+        true_epoch = self.config.pretrained_model + 1
 
-        for epoch in range(self.config.epochs_num):
+        Step0 = 0 + true_epoch * N_batch
+
+
+        remain_epochs = self.config.epochs_num - true_epoch
+
+        if is_main_gpu():
+            print("Starting training for", remain_epochs, "epochs...", flush=True)
+
+        
+        for epoch in range(remain_epochs):
 
             self.train_dataloader.sampler.set_epoch(epoch)
             self.test_dataloader.sampler.set_epoch(epoch)
             if is_main_gpu():
                 print("----------------------------------------------------------", flush=True)
-                print("Epoch num ", epoch + 1, "/", self.config.epochs_num, flush=True)
+                print("Epoch num ", true_epoch + epoch, "/", self.config.epochs_num, flush=True)
 
             step = 0
             time_step = 0.
@@ -596,13 +628,13 @@ class Trainer():
                 #print(f"\nEpoch {epoch + 1}/{self.config.epochs_num}    GPU_mem {gpu_memory:.2f}G")
 
                 loop = tqdm(enumerate(self.train_dataloader), total=len(self.train_dataloader),
-                        desc=f"Epoch {epoch + 1}/{self.config.epochs_num}", unit="batch",
+                        desc=f"Epoch {true_epoch + epoch}/{self.config.epochs_num}", unit="batch",
                 postfix=f"")
             else:
                 loop = enumerate(self.train_dataloader)
             
             for i, batch in loop:
-                img, cond, _, _ = batch
+                img, cond = batch
 
                 img = img.cuda()
                 cond = cond.cuda()
@@ -610,12 +642,11 @@ class Trainer():
                     y = Embedder(cond)
 
                 t = time.perf_counter()
-                Step = epoch * N_batch + step
+                Step = Step0 + epoch * N_batch + step
 
                 lambda_t = min(1, 
                                 max(0, 
                                 (Step - self.config.lambda_start_step)/(self.config.lambda_stop_step - self.config.lambda_start_step)))
-
                 true_epoch = epoch + self.config.pretrained_model  # used only in output funcs
 
                 ############################### Discriminator Updates #########

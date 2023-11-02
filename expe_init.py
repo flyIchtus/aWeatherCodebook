@@ -215,7 +215,8 @@ def get_expe_parameters():
     parser.add_argument('--data_dir', type=str,default="/scratch/mrmn/brochetc/GAN_2D/datasets_full_indexing/IS_1_1.0_0_0_0_0_0_256_done/" )
     parser.add_argument('--mean_file', type=str,default="mean_with_8_var.npy" )
     parser.add_argument('--max_file', type=str,default="max_with_8_var.npy" )
-    parser.add_argument('--id_file', type=str, default="IS_method_labels_8_var.csv" )
+    parser.add_argument('--id_file_train', type=str, default="IS_method_labels_8_var.csv" )
+    parser.add_argument('--id_file_test', type=str, default="IS_method_labels_8_var.csv" )
     parser.add_argument('--pretrained_model', type=int, default=0)
 
     # if not dirs["interactive"] : 
@@ -342,7 +343,7 @@ def get_expe_parameters():
     
     
     # Testing and plotting setting
-    parser.add_argument('--test_samples',type=int, default=16 ) # if all_domain else 256,help='samples to be tested')
+    parser.add_argument('--test_samples',type=int, default=4 ) # if all_domain else 256,help='samples to be tested')
     parser.add_argument('--plot_samples', type=int, default=16)
     parser.add_argument('--sample_num', type=int, default=16, help='Samples to be saved') #  if all_domain else 256,\
     
@@ -387,8 +388,8 @@ def make_dicts(ensemble,  option='cartesian'):
 
     allowed_args=set(vars(get_expe_parameters())['_option_string_actions'])
     keys=set(ensemble)
-     
-    assert keys<=allowed_args
+    if keys - allowed_args != set():
+        raise ValueError(f"Some args in ensemble are unexpected : {keys - allowed_args}")
     prod_list=[]
     list_items = list(ensemble.values())
     if option=='cartesian':
@@ -621,11 +622,11 @@ if __name__=="__main__":
 
     previous_sets = len(glob(dirs.output_dir+'*Set*'))
     
-    SET_NUM = 2 if very_small_exp or small_exp else \
-            5 if all_domain else\
-            3 if monovar else\
-            4 if not use_noise else\
-            1
+    SET_NUM = dirs.SET_NUM #2 if very_small_exp or small_exp else \
+    #        5 if all_domain else\
+    #        3 if monovar else\
+    #        4 if not use_noise else\
+    #        1
     
     # je suis pas méga sûr de ce qui suit donc je commente pour garder mon arborescence
     #if dirs.SET_NUM>0:
@@ -642,7 +643,8 @@ if __name__=="__main__":
     ensemble['--output_dir']=[dirs.output_dir]
     ensemble['--mean_file']=[dirs.mean_file]
     ensemble['--max_file']=[dirs.max_file]
-    ensemble['--id_file']=[dirs.id_file]
+    ensemble['--id_file_train']=[dirs.id_file_train]
+    ensemble['--id_file_test']=[dirs.id_file_test]
     # normalement même pas obligé de mettre cette ligne vu qu'il est déjà dans ensemble
     ensemble['--pretrained_model']=dirs.ensemble["--pretrained_model"]
     ensemble['--VQparams_file']=[dirs.VQparams_file]

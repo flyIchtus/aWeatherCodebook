@@ -29,54 +29,23 @@ import random
 var_dict = {'rr': 0, 'u': 1, 'v': 2, 't2m': 3, 'orog': 4, 'z500': 5, 't850': 6, 'tpw850': 7}
 
 
-class DatasetCache(object):
-    def __init__(self, use_cache=True):
-        self.use_cache = use_cache
-        self.manager = Manager()
-        self._dict = self.manager.dict()
-
-    def is_cached(self, key):
-        if not self.use_cache:
-            return False
-        return str(key) in self._dict
-
-    def reset(self):
-        self._dict.clear()
-
-    def get(self, key):
-        if not self.use_cache:
-            raise AttributeError('Data caching is disabled and get function is unavailable! Check your config.')
-        return self._dict[str(key)]
-
-    def cache(self, key, sample, importance, pos):
-        # only store if full data in memory is enabled
-        if not self.use_cache:
-            return
-        # only store if not already cached
-        if str(key) in self._dict:
-            return
-        self._dict[str(key)] = (sample, importance, pos)
-
 
 ################
-class ISDataset(Dataset):
+class EnsembleDataset(Dataset):
 
     def __init__(self, data_dir, ID_file, var_indices, crop_size, full_size, \
                  transform=None,
                  sample_method='random',
-                 crop_indexes=None,
-                 use_cache=False):
+                 crop_indexes=None):
 
         self.data_dir = data_dir
         self.transform = transform
-        self.cache = DatasetCache(use_cache=use_cache)
-        if use_cache:
-            import resource
-            resource.setrlimit(
-                resource.RLIMIT_CORE,
-                (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
             
         self.labels = pd.read_csv(data_dir + ID_file)
+
+        membersindexed = self.labels['MemberIndex'].drop_duplicates()
+
+        self.indexmap = [k for k in membersindexed]
         self.full_size = full_size  # size of the full data samples
 
         ## portion of data to crop from (assumed fixed)
@@ -121,80 +90,50 @@ class ISDataset(Dataset):
         self.cache.reset()
 
     def __len__(self):
-        return len(self.labels)
+
+        mbs = self.labels['MemberIndex'].drop_duplicates()
+
+        return len(mbs)
 
     def __getitem__(self, idx):
-        if self.cache.is_cached(idx):
-            sample, importance, position = self.cache.get(idx)
-        else:
+        
+        ####### finding main (conditioning) sample
+        ensemble_df = self.labels.loc[(self.labels['MemberIndex']==self.indexmap[idx])]
 
-            ####### finding main (conditioning) sample
-            cond_path = os.path.join(self.data_dir, self.labels['Name'].iloc[idx])
-            cond_name = self.labels['Name'].iloc[idx]
-            if self.sample_method == 'coords':
-                crop_X0 = self.CI[0]
-                crop_X1 = self.CI[1]
-                crop_Y0 = self.CI[2]
-                crop_Y1 = self.CI[3]
-            if self.sample_method == 'random':
-                crop_X0 = np.random.randint(0, high=self.full_size[0] - self.crop_size[0])
-                crop_X1 = crop_X0 + self.crop_size[0]
-                crop_Y0 = np.random.randint(0, high=self.full_size[1] - self.crop_size[1])
-                crop_Y1 = crop_Y0 + self.crop_size[1]
+        ensemble_batch = np.zeros((len(ensemble_df),len(self.VI), self.crop_size[0], self.crop_size[1]), dtype=np.float32)
+        
+        if self.sample_method == 'coords':
+            crop_X0 = self.CI[0]
+            crop_X1 = self.CI[1]
+            crop_Y0 = self.CI[2]
+            crop_Y1 = self.CI[3]
+        if self.sample_method == 'random':
+            crop_X0 = np.random.randint(0, high=self.full_size[0] - self.crop_size[0])
+            crop_X1 = crop_X0 + self.crop_size[0]
+            crop_Y0 = np.random.randint(0, high=self.full_size[1] - self.crop_size[1])
+            crop_Y1 = crop_Y0 + self.crop_size[1]
 
-            cond = np.float32(np.load(cond_path + '.npy')) \
-                    [self.VI, crop_X0:crop_X1, crop_Y0:crop_Y1]
+        for i, s in enumerate(ensemble_df['Name']):
 
-            try:
+            data = np.load(f'{self.data_dir}{s}.npy').astype(np.float32)[self.VI, crop_X0:crop_X1, crop_Y0:crop_Y1]
+            ensemble_batch[i] = self.transform(data.transpose((1,2,0))) if self.transform else data
 
-                importance = self.labels['Importance'].iloc[idx]
-                position = self.labels['Position'].iloc[idx]
-            
-            except KeyError:
-                pass
-
-            #### finding target sample
-            cond_member = self.labels['Member'].iloc[idx] #member
-            cond_date = self.labels['Date'].iloc[idx] #date
-            cond_lt = self.labels['Leadtime'].iloc[idx] #leadtime
-            other_members = [i for i in range(16) if i!=cond_member]
-            mb = random.sample(other_members,1)[0]
-
-            #print(cond_member, mb)
-            target_df = self.labels[(self.labels['Date']==str(cond_date)) & (self.labels['Leadtime']==int(cond_lt)) & (self.labels['Member']==int(mb))]
-
-            target_path = os.path.join(self.data_dir, 
-                            target_df['Name'].values[0])
-
-            target = np.float32(np.load(target_path + '.npy')) \
-                    [self.VI, crop_X0:crop_X1, crop_Y0:crop_Y1]
-
-            cond = cond.transpose((1, 2, 0))
-            target = target.transpose((1,2,0))
-
-            if self.transform:
-                cond = self.transform(cond)
-                target = self.transform(target)
+        #self.cache.cache(idx, target, cond, importance, position)
+        
+        return ensemble_batch
 
 
-            #self.cache.cache(idx, target, cond, importance, position)
-
-        return target, cond
-
-
-class ISData_Loader():
+class EnsembleData_Loader():
 
     def __init__(self, path, batch_size, variables, crop_size, full_size,
                  crop_indexes=None, \
                  shuf=False,
                  mean_file='mean_with_8_var.npy',
                  max_file='max_with_8_var.npy',
-                 id_file='IS_method_labels_8_var.csv',
-                 use_cache=False):
+                 id_file='IS_method_labels_8_var.csv'):
 
         self.path = path
         self.batch = batch_size
-        self.use_cache = use_cache
 
         self.shuf = shuf  # shuffle performed once per epoch
 
@@ -229,7 +168,7 @@ class ISData_Loader():
         transform = Compose(options)
         return transform
 
-    def loader(self, hvd_size=None, hvd_rank=None, kwargs=None):
+    def loader(self, size=None, rank=None, kwargs=None):
 
         if kwargs is not None:
             with FileLock(os.path.expanduser("~/.horovod_lock")):  # if absent, causes SIGSEGV error
@@ -239,17 +178,16 @@ class ISData_Loader():
                 else:
                     sample_method = 'random'
 
-                dataset = ISDataset(self.path, self.id_file,  ## CHANGED HERE
+                dataset = EnsembleDataset(self.path, self.id_file,  ## CHANGED HERE
                                     self.VI,
                                     self.crop_size,
                                     self.full_size,
                                     self.transform(True, True),  # remettre True
                                     sample_method=sample_method,
-                                    crop_indexes=self.CI,
-                                    use_cache=self.use_cache)  # coordinates system
+                                    crop_indexes=self.CI)  # coordinates system
 
         self.sampler = DistributedSampler(
-            dataset, num_replicas=hvd_size, rank=hvd_rank
+            dataset, num_replicas=size, rank=rank
         )
         if kwargs is not None:
 
@@ -266,6 +204,7 @@ class ISData_Loader():
                                 batch_size=self.batch,
                                 shuffle=self.shuf,
                                 sampler=self.sampler,
-                                drop_last=True, num_workers=1
+                                drop_last=True,
+                                num_workers=1
                                 )
         return loader

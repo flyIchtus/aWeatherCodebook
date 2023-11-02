@@ -82,7 +82,7 @@ def could_use_op(input):
     if input.device.type != "cuda":
         return False
 
-    if any(torch.__version__.startswith(x) for x in ["1.7.", "1.8."]):
+    if any(torch.__version__.startswith(x) for x in ["1.7.", "1.8.", "2.0"]):
         return True
 
     warnings.warn(
@@ -146,13 +146,13 @@ def conv2d_gradfix(
                     **common_kwargs,
                 )
 
-            ctx.save_for_backward(input, weight)
+            ctx.save_for_backward(input, weight,bias)
 
             return out
 
         @staticmethod
         def backward(ctx, grad_output):
-            input, weight = ctx.saved_tensors
+            input, weight, bias = ctx.saved_tensors
             grad_input, grad_weight, grad_bias = None, None, None
 
             if ctx.needs_input_grad[0]:
@@ -167,7 +167,7 @@ def conv2d_gradfix(
                 ).apply(grad_output, weight, None)
 
             if ctx.needs_input_grad[1] and not weight_gradients_disabled:
-                grad_weight = Conv2dGradWeight.apply(grad_output, input)
+                grad_weight = Conv2dGradWeight.apply(grad_output, input, bias)
 
             if ctx.needs_input_grad[2]:
                 grad_bias = grad_output.sum((0, 2, 3))
@@ -176,27 +176,18 @@ def conv2d_gradfix(
 
     class Conv2dGradWeight(autograd.Function):
         @staticmethod
-        def forward(ctx, grad_output, input):
-            op = torch._C._jit_get_operation(
-                "aten::cudnn_convolution_backward_weight"
-                if not transpose
-                else "aten::cudnn_convolution_transpose_backward_weight"
-            )
-            flags = [
-                torch.backends.cudnn.benchmark,
-                torch.backends.cudnn.deterministic,
-                torch.backends.cudnn.allow_tf32,
-            ]
-            grad_weight = op(
-                weight_shape,
-                grad_output,
-                input,
-                padding,
-                stride,
-                dilation,
-                groups,
-                *flags,
-            )
+        def forward(ctx, grad_output, input, bias):
+            bias_shape = bias.shape if (bias is not None) else None
+            empty_weight = torch.empty(weight_shape, dtype=input.dtype, 
+                                layout=input.layout, 
+                                device=input.device)
+            grad_weight = torch.ops.aten.convolution_backward(grad_output, input, empty_weight, 
+                                        bias_sizes=bias_shape, stride=stride, 
+                                        padding=padding, dilation=dilation, 
+                                        transposed=transpose,
+                                        output_padding=output_padding, groups=groups, 
+                                        output_mask=[0,1,0])[1]
+          
             ctx.save_for_backward(grad_output, input)
 
             return grad_weight
@@ -220,7 +211,7 @@ def conv2d_gradfix(
                     **common_kwargs,
                 ).apply(grad_output, grad_grad_weight, None)
 
-            return grad_grad_output, grad_grad_input
+            return grad_grad_output, grad_grad_input, None
 
     conv2d_gradfix_cache[key] = Conv2d
 
