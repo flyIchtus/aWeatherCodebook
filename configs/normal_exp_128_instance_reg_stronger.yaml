@@ -1,0 +1,53 @@
+# Path
+data_dir: /scratch/mrmn/gandonb/data/cropped_120_376_540_796/
+output_dir: /scratch/mrmn/brochetc/GAN_2D/Exp_Codebook/
+config_dir: /home/mrmn/brochetc/aweathercodebook/configs/
+id_file_train: labels/conditional/labels_mbIndexed_train1.csv   # file in data_dir  : labels ID file
+id_file_test: labels/conditional/labels_mbIndexed_test.csv
+
+# Path for experiments
+SET_NUM: 7   # run test jobs in Set_2
+pretrained_model: -1 # step at which pretrained model have been saved
+which_experiment: -1 # index of the experiment to run if pretrained_model is activated # not really used anymore
+max_relaunch: 0 # number of times we relaunch the expe after timeout
+auto_relaunch: False # set to Yes if you want an automatic relaunch. Manual relaunch (e.g. from pretrained)                        should be passed with auto_relaunch=False to prevent overwriting previous results.
+main_file: main_ddp.py # main_horovod.py
+slurm_file: runGANhpc.sh  # slurm file in slurm_dir (=home_dir + "/slurms/")
+slurm_docker_run_perso: slurm-docker-run_perso-DDP # slurm file in home_dir
+nb_gpus: 1
+# PARAMETRES A TESTER: changer le lr et/ou le lr_mlp (ajouter un arg pour ça car pas pris en compte actuellement), 
+#  scheduler sur lr (exp scheduler), 
+#  channel_multiplier: tester 1 vs 2 vs 3
+#  batch size : 4, 8, 32 (utiliser 512 latent dim!)
+
+very_small_exp: False 
+small_exp: False
+normal_exp_steps: 5
+
+ensemble:
+  --epochs_num : [25]
+  --batch_size: [16]
+  --lr_D: [0.002]
+  --lr_G: [0.002]
+  --g_channels: [3]
+  --d_channels: [3]
+  --var_names: ["[u,v,t2m]"]
+  --total_steps: [350000]
+  --conditional: [True]
+  --discrete_level: [0]
+  --path_batch_shrink: [2]
+  --model: ['stylegan2']
+  --train_type: ['stylegan']
+  --latent_dim: [512]
+  --pretrained_model: [-1]
+  --use_noise: [True]
+  --crop_indexes: ["[78,206,55,183]"]
+  --crop_size: ["[128,128]"]
+  --full_size: ["[256,256]"]
+  --channel_multiplier: [2]
+  --instance_discrim: [True]
+  --id_reg: [0.001,0.01,0.1]
+  --dataset_handler_config: ['dataset_handler_config.yaml'] # relative path 
+  --scheduler_config: ['scheduler_config.yaml'] # relative path 
+  
+VQparams_file: '/home/mrmn/brochetc/aweathercodebook/configs/VQgan.yml'

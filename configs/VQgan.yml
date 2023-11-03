@@ -23,4 +23,4 @@ VQparams:
       codebook_weight: 1.0
   n_embed: 8192
   embed_dim: 3
-  ckpt_path: '/scratch/work/brochetc/Exp_Codebook/VQ-GAN/EnDecoder_vqgan/checkpoints/gens_vqgan_fl4_D3_N8192_32x32x3_cyclic_3717.ckpt'
+  ckpt_path: '/scratch/mrmn/brochetc/GAN_2D/Exp_Codebook/VQ-GAN/EnDecoder_vqgan/checkpoints/gens_vqgan_fl4_D3_N8192_32x32x3_cyclic_3717.ckpt'

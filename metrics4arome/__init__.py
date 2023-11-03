@@ -169,20 +169,20 @@ InterMapVariance = metric2D('Mean Batch variance of channels   ', \
 ## crude Wasserstein distances
 
 W1_Center = criterion2D('Mean Wasserstein distance on center crop  ',\
-                      WD.W1_center, all_var_no_rr_orog, names = ['W1_Center'])
+                      WD.W1_center, vars_u_v_t, names = ['W1_Center'])
 
 
 W1_Center_NUMPY = criterion2D('Mean Wasserstein distance on center crop  ',\
-                      WD.W1_center_numpy, all_var_no_rr_orog, names = ['W1_Center'])
+                      WD.W1_center_numpy, vars_u_v_t, names = ['W1_Center'])
 
 W1_random = criterion2D('Mean Wasserstein distance on random selection  ',\
-                        WD.W1_random, all_var_no_rr_orog, names = ['W1_random'])
+                        WD.W1_random, vars_u_v_t, names = ['W1_random'])
 
 W1_random_NUMPY = criterion2D('Mean Wasserstein distance on random selection  ',\
-                        WD.W1_random_NUMPY, all_var_no_rr_orog, names = ['W1_random'])
+                        WD.W1_random_NUMPY, vars_u_v_t, names = ['W1_random'])
 
 pw_W1_all = metric2D('Point Wise Wasserstein distance', WD.pointwise_W1,\
-               all_var_no_rr_orog, names = ['pw_W1'])
+               vars_u_v_t, names = ['pw_W1'])
 
 
 
@@ -205,47 +205,24 @@ SWD_metric_torch_all = metric2D('Sliced Wasserstein Distance  ',\
 
 
 spectral_dist_all = metric2D('Power Spectral Density RMSE  ',\
-                  Spectral.PSD_compare, all_var_no_rr_orog, names = ['PSDu','PSDv','PSDt2m','PSDz500','PSDt850','PSDtpw850'])
+                  Spectral.PSD_compare, vars_u_v_t, names = ['PSDu','PSDv','PSDt2m'])
 
 spectral_dist_torch_all = metric2D('Power Spectral Density RMSE  ',\
-                  Spectral.PSD_compare_torch, all_var_no_rr_orog, names = ['PSDu','PSDv','PSDt2m','PSDz500','PSDt850','PSDtpw850'])
+                  Spectral.PSD_compare_torch, vars_u_v_t, names = ['PSDu','PSDv','PSDt2m'])
 
 spectral_compute = metric2D('Power Spectral Density  ',\
-                  Spectral.PowerSpectralDensity, all_var)
-
-#spectral_distrib = metric2D('Power Spectral Density Distribution ', \
-#                   Spectral.PowerSpectralDensity_Distrib, vars_wo_orog, names = ['PSDu', 'PSDv','PSDt2m']     )
+                  Spectral.PowerSpectralDensity, vars_u_v_t)
 
 
-# FID score
-"""
-fid = metric2D('Fréchet Inception Distance  ',\
-             inception.FIDclass(inception.inceptionPath).FID,\
-             ['FID'])
+# simple ensemble metrics
+spread_diff_torch = metric2D('Spread Ensemble Difference   ',\
+                 lambda real, fake: GM.spread_diff(real, fake, maxs=[36.22896302,33.1638527,47.18728022],usetorch=True),
+                 vars_u_v_t, names= ['spreadDiffu','spreadDiffv','spreadDifft2m'])
+mean_diff_torch = metric2D('Mean ensemble Difference  ',\
+                 lambda real, fake: GM.mean_diff(real, fake, maxs=[36.22896302,33.1638527,47.18728022],usetorch=True),
+                 vars_u_v_t, names= ['meanDiffu','meanDiffv','meanDifft2m'])
 
-# scattering metrics with sparsity and shape estimators
 
-
-scat_sparse = scat.scattering_metric(
-        J=4,L=8,shape=(127,127), estimators=['s21', 's22'],
-        frontend='torch', backend='torch', cuda=True
-                                   )
-#two versions of the same metrics
-scat_SWD_metric = metric2D('Scattering Estimators ', scat_sparse.scattering_sliced,\
-                       vars_wo_orog)
-
-scat_SWD_metric_renorm = metric2D('Scattering Estimators', scat_sparse.scattering_renorm,
-                              vars_wo_orog)
-
-scat_rmse = metric2D('Scattering Estimators', scat_sparse.scattering_rmse,
-                              vars_wo_orog)
-
-# structure functions 
-
-struct_metric = metric2D('First order structure function', 
-                         lambda data : sfunc.increments(data, max_length = 16),\
-                       vars_wo_orog)
-"""
 #multivariate_comparisons
 multivar = metric2D('Multivariate data ', multiv.multi_variate_correlations,\
                   all_var_no_rr_orog, names=['Corr_r','Corr_f'])

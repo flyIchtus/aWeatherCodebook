@@ -364,7 +364,8 @@ class Generator(nn.Module):
         for layer_idx in range(self.num_layers):
             res = (layer_idx + 5) // 2
             shape = [1, 1, 2 ** res, 2 ** res]
-            self.noises.register_buffer(f"noise_{layer_idx}", torch.randn(*shape))
+            self.noises.register_buffer(f"noise_{layer_idx}", torch.randn(*shape))        print(ensemble_batch.mean(axis=(0,-2,-1)))
+
 
         for i in range(3, self.log_size + 1):
             out_channel = self.channels[2 ** i]
@@ -656,7 +657,6 @@ class Discriminator(nn.Module):
         out = self.final_conv(out)
         #print('final_conv ',out.shape)
         out = out.view(batch, -1)
-        #print('out ',out.shape, self.final_linear[0].weight.shape, self.final_linear[1].weight.shape)
         out_inp = self.final_c_linear(out)
 
         y = self.LinearEmbed(condition)

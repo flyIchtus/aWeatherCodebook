@@ -623,7 +623,7 @@ class Discriminator(nn.Module):
         self.stddev_group = 4
         self.stddev_feat = 1
 
-        self.final_conv = ConvLayer(in_channel + 1, channels[4], 3)
+        self.final_conv = ConvLayer(in_channel, channels[4], 3)
         self.final_uc_linear = nn.Sequential(
             EqualLinear(channels[4] * 4 * 4, channels[4], activation="fused_lrelu"),
             EqualLinear(channels[4], 1),
@@ -634,9 +634,9 @@ class Discriminator(nn.Module):
             EqualLinear(channels[4] * 4 * 4, channels[4], activation="fused_lrelu"),
         )
 
-    def forward(self, input, condition, lambda_t, normalize=False, instance_disc=False, temperature=None):
+    def forward(self, input, condition, y, lambda_t, normalize=False, instance_disc=False, temperature=None):
         
-        #print("input ", input.shape)
+       
         out = self.convs(input)
 
         #print("before std ", out.shape)
@@ -647,33 +647,35 @@ class Discriminator(nn.Module):
         out = self.final_conv(out)
         #print('final_conv ',out.shape)
         out = out.view(batch, -1)
-        #print('out ',out.shape, self.final_linear[0].weight.shape, self.final_linear[1].weight.shape)
+        #print('out ',out.shape, self.final_c_linear[0].weight.shape)
         out_inp = self.final_c_linear(out)
 
-        y = self.LinearEmbed(condition)
+        uc_out = self.final_uc_linear(out)
+
+        y = self.LinearEmbed(y)
             
         if instance_disc:
             
             out_cond = self.convs(condition) 
             out_cond = self.final_conv(out_cond)
-            #print('final_conv ',out.shape)
-            out_cond = out_cond.view(batch, -1)
+            #print('final_conv ',out_cond.shape)
+            out_cond = out_cond.view(out_cond.shape[0], -1)
             out_cond = self.final_c_linear(out_cond)
 
             instance_reg = ID.tripletNTXent(y, out_inp, out_cond, temperature) # anchor, positive, negative --> could be triplet loss with temperature used as margin
 
-            return instance_reg
+            return uc_out + instance_reg
 
-        stddev = out.view(
-            group, -1, self.stddev_feat, channel // self.stddev_feat, height, width
-        )
-        stddev = torch.sqrt(stddev.var(0, unbiased=False) + 1e-8)
-        stddev = stddev.mean([2, 3, 4], keepdims=True).squeeze(2)
-        stddev = stddev.repeat(group, 1, height, width)
+        #stddev = out.view(
+        #    group, -1, self.stddev_feat, channel // self.stddev_feat, height, width
+        #)
+        #stddev = torch.sqrt(stddev.var(0, unbiased=False) + 1e-8)
+        #stddev = stddev.mean([2, 3, 4], keepdims=True).squeeze(2)
+        #stddev = stddev.repeat(group, 1, height, width)
 
-        out = torch.cat([out, stddev], 1)
+        #out = torch.cat([out, stddev], 1)
 
-        uc_out = self.final_uc_linear(out)
+        
         
         #we want to align embeddings with condition
         

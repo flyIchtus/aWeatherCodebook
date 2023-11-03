@@ -15,7 +15,7 @@ upfirdn2d_op = load(
     sources=[
         os.path.join(module_path, "upfirdn2d.cpp"),
         os.path.join(module_path, "upfirdn2d_kernel.cu"),
-    ],verbose=True,
+    ],verbose=False,
 )
 #print('sources compiled')
 
