@@ -3,11 +3,12 @@
 """
 Created on Wed Jun 18 11:11:24 2023
 
-@author: rabaultj
+@authors: brochetc rabaultj
 """
 
 from tqdm import tqdm
 import time
+import yaml
 ########## NN libs ############################################################
 
 import numpy as np
@@ -39,16 +40,16 @@ import model.GAN_logic as GAN
 
 ###################### Scheduler choice function ##############################
 
-def AllocScheduler(sched, optimizer, gamma):
+def AllocScheduler(sched, optimizer, gamma, network):
     if sched == "exp":
-        if is_main_gpu(): print("exponential scheduler")
+        if is_main_gpu(): print(f"{network} scheduler set to exponential scheduler")
         return optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
     elif sched == "linear":
-        if is_main_gpu(): print("linear scheduler")
+        if is_main_gpu(): print(f"{network} scheduler set to linear scheduler")
         lambda0 = lambda epoch: 1.0 / (1.0 + gamma * epoch)
         return optim.lr_scheduler.LambdaLR(optimizer, lambda0)
     else:
-        if is_main_gpu(): print("Scheduler set to None")
+        if is_main_gpu(): print(f"{network} scheduler set to None")
         return None
 
 
@@ -235,15 +236,19 @@ class Trainer():
             self.optim_G.load_state_dict(load_optim["g_optim"])
             self.optim_D.load_state_dict(load_optim["d_optim"])
 
-        self.scheduler_G = AllocScheduler(self.config.lrD_sched, self.optim_G, self.config.lrD_gamma)
-        self.scheduler_D = AllocScheduler(self.config.lrG_sched, self.optim_D, self.config.lrG_gamma)
+        if self.config.scheduler_config != "None":
+            print(f"Scheduler: {self.config.config_dir}{self.config.scheduler_config}")
+            with open(f"{self.config.config_dir}{self.config.scheduler_config}", "r") as sched_config_file:
+                sched_yaml = yaml.safe_load(sched_config_file)
+            self.scheduler_G = AllocScheduler(sched_yaml["G_sched"], self.optim_G, sched_yaml["lrG_gamma"], "Generator")
+            self.scheduler_D = AllocScheduler(sched_yaml["D_sched"], self.optim_D, sched_yaml["lrD_gamma"], "Discriminator")
+        else:
+            print(f"No scheduler_config file provided, shedulers set to None")
+            if self.config.scheduler_config != "" and self.config.pretrained_model >= 0:
+                print("Loading scheduler...")
+                self.scheduler_G.load_state_dict(torch.load(f"{self.config.output_dir}/models/SchedGen_{self.config.pretrained_model}"))
 
-        if load_sched:
-            self.scheduler_G.load_state_dict(torch.load(self.config.output_dir + \
-                                                        '/models/SchedGen_{}'.format(self.config.pretrained_model)))
-
-            self.scheduler_D.load_state_dict(torch.load(self.config.output_dir + \
-                                                        '/models/SchedDisc_{}'.format(self.config.pretrained_model)))
+                self.scheduler_D.load_state_dict(torch.load(f"{self.config.output_dir}/models/SchedDisc_{self.config.pretrained_model}"))
 
         return torch.cuda.memory_allocated()
 
@@ -258,19 +263,9 @@ class Trainer():
         torch.set_num_threads(1)
 
         if is_main_gpu(): print("Loading data")
-        self.Dl_train = DSH.ISData_Loader(self.config.data_dir, self.batch_size,
-                                          self.config.var_names, self.config.crop_size, self.config.full_size,
-                                          crop_indexes=self.crop_indexes,
-                                          mean_file=self.config.mean_file,
-                                          max_file=self.config.max_file,
-                                          id_file=self.config.id_file_train)
+        self.Dl_train = DSH.ISData_Loader("Train", self.config)
 
-        self.Dl_test = eDSH.EnsembleData_Loader(self.config.data_dir, self.config.test_samples,
-                                         self.config.var_names, self.config.crop_size, self.config.full_size,
-                                         crop_indexes=self.crop_indexes,
-                                         mean_file=self.config.mean_file,
-                                         max_file=self.config.max_file,
-                                         id_file=self.config.id_file_test)
+        self.Dl_test = eDSH.EnsembleData_Loader("Test", self.config)
 
         kwargs = {'pin_memory': True}
 
@@ -443,23 +438,24 @@ class Trainer():
 
     ########################### TRAINING FUNCTIONS ############################
 
-    def Discrim_Update(self, modelD, modelG, samples, conditions, lambda_t,step=0):
+    def Discrim_Update(self, modelD, modelG, Embedder, samples, conditions, lambda_t,step=0):
 
         requires_grad(modelG, False)
         requires_grad(modelD, True)
 
+        with torch.no_grad():
+            y_cond = Embedder(conditions)
+            y_target = Embedder(samples)
 
-        loss_0 = self.D_backward(samples, conditions, modelD, modelG, lambda_t,
+        loss_0 = self.D_backward(samples, y_cond, y_target, modelD, modelG, lambda_t,
                                  self.config.latent_dim, 
                                  mixing=self.config.mixing
                                  )
-
-        
         
         self.optim_D.step()
 
         if self.config.train_type == 'stylegan' and step % self.config.d_reg_every == 0:
-            loss_1 = GAN.Discrim_Regularize(samples, conditions, modelD,
+            loss_1 = GAN.Discrim_Regularize(samples, conditions, y_cond, modelD,
                                             self.config.r1, self.config.d_reg_every, lambda_t)
 
             loss_0 = merge_dict(loss_0, loss_1)
@@ -467,19 +463,22 @@ class Trainer():
             self.optim_D.step()
 
             if self.config.instance_discrim:
-                loss_2 = GAN.Instance_Discrim_Reg(samples, condition, modelD, self.config.id_reg, self.config.d_reg_every, lambda_t, self.config.temperature)
+                loss_2 = GAN.Instance_Discrim_Reg(samples, conditions, y_cond, modelD, self.config.id_reg, self.config.d_reg_every, lambda_t, self.config.temperature)
 
                 loss_0 = merge_dict(loss_0, loss_1)
 
                 self.optim_D.step()
         return loss_0
 
-    def Generator_Update(self, modelD, modelG, samples, conditions, lambda_t, step=0):
-
+    def Generator_Update(self, modelD, modelG, Embedder, samples, conditions, lambda_t, step=0):
+        
+        with torch.no_grad():
+            y_cond = Embedder(conditions)
+            y_target = Embedder(samples)
         requires_grad(modelG, True)
         requires_grad(modelD, False)
 
-        loss_0 = self.G_backward(samples, conditions,
+        loss_0 = self.G_backward(samples, y_cond, y_target,
                                  modelD,
                                  modelG,lambda_t,
                                  self.config.latent_dim,
@@ -497,7 +496,7 @@ class Trainer():
                                                                 self.config.path_regularize,
                                                                 self.mean_path_length,
                                                                 modelG,
-                                                                conditions,
+                                                                y_cond,
                                                                 lambda_t,
                                                                 self.config.latent_dim,
                                                                 self.config.g_reg_every,
@@ -606,24 +605,24 @@ class Trainer():
 
         N_batch = len(self.train_dataloader)
 
-        true_epoch = self.config.pretrained_model + 1
+        start_epoch = self.config.pretrained_model + 1
 
-        Step0 = 0 + true_epoch * N_batch
+        Step0 = 0 + start_epoch * N_batch
 
 
-        remain_epochs = self.config.epochs_num - true_epoch
+        remain_epochs = self.config.epochs_num - start_epoch
 
         if is_main_gpu():
             print("Starting training for", remain_epochs, "epochs...", flush=True)
 
         
-        for epoch in range(remain_epochs):
+        for epoch in range(1,remain_epochs+1):
 
             self.train_dataloader.sampler.set_epoch(epoch)
             self.test_dataloader.sampler.set_epoch(epoch)
             if is_main_gpu():
                 print("----------------------------------------------------------", flush=True)
-                print("Epoch num ", true_epoch + epoch, "/", self.config.epochs_num, flush=True)
+                print("Epoch num ", start_epoch + epoch, "/", self.config.epochs_num, flush=True)
 
             step = 0
             time_step = 0.
@@ -634,7 +633,7 @@ class Trainer():
                 #print(f"\nEpoch {epoch + 1}/{self.config.epochs_num}    GPU_mem {gpu_memory:.2f}G")
 
                 loop = tqdm(enumerate(self.train_dataloader), total=len(self.train_dataloader),
-                        desc=f"Epoch {true_epoch + epoch}/{self.config.epochs_num}", unit="batch",
+                        desc=f"Epoch {start_epoch + epoch}/{self.config.epochs_num}", unit="batch",
                 postfix=f"")
             else:
                 loop = enumerate(self.train_dataloader)
@@ -648,21 +647,21 @@ class Trainer():
                     y = Embedder(cond)
 
                 t = time.perf_counter()
-                Step = Step0 + epoch * N_batch + step
+                Step = Step0 + (epoch - 1) * N_batch + step
 
                 lambda_t = min(1, 
                                 max(0, 
                                 (Step - self.config.lambda_start_step)/(self.config.lambda_stop_step - self.config.lambda_start_step)))
-                true_epoch = epoch + self.config.pretrained_model  # used only in output funcs
+                start_epoch = epoch + self.config.pretrained_model  # used only in output funcs
 
                 ############################### Discriminator Updates #########
-                loss_d = self.Discrim_Update(modelD, modelG, img, y, lambda_t,
+                loss_d = self.Discrim_Update(modelD, modelG, Embedder, img, cond, lambda_t,
                                                         step=Step)  # all losses are already reduced after this step
                 
                 
                 ############################ Generator Update #################
 
-                loss_g = self.Generator_Update(modelD, modelG, cond, y, lambda_t,
+                loss_g = self.Generator_Update(modelD, modelG, Embedder, img, cond, lambda_t,
                                                 step=Step)  # all losses are already reduced after this step
                 
 
@@ -698,36 +697,36 @@ class Trainer():
                     break
                 ############ END OF STEP ######################################
 
-            if epoch == 0 and is_main_gpu():
+            if start_epoch + epoch - 1 == 0 and is_main_gpu():
                 self.instantiate_metrics_log()
 
             ############### saving models and samples #################
 
             if self.save_epoch > 0 and (
-                    epoch % self.save_epoch == 0 or epoch == self.config.epochs_num - 1) and is_main_gpu():
-                self.save_samples(self.config.sample_num, true_epoch, modelG_ema,Embedder, cond0, lambda_t)
-                if self.config.pretrained_model > 0:  # we don't want to save the first step when using a pretrained
-                    if not (true_epoch == self.config.pretrained_model and epoch == 0):
-                        self.save_models(true_epoch, modelG, modelD, modelG_ema)
+                    start_epoch + epoch % self.save_epoch == 0 or  start_epoch + epoch == self.config.epochs_num - 1) and is_main_gpu():
+                self.save_samples(self.config.sample_num, start_epoch + epoch, modelG_ema,Embedder, cond0, lambda_t)
+                if self.config.pretrained_model >= 0:  # we don't want to save the first step when using a pretrained
+                    if not ( start_epoch + epoch == self.config.pretrained_model and epoch == 0):
+                        self.save_models(start_epoch + epoch, modelG, modelD, modelG_ema)
                 else:
-                    self.save_models(true_epoch+1, modelG, modelD, modelG_ema)
+                    self.save_models(start_epoch + epoch, modelG, modelD, modelG_ema)
 
             ############### testing samples at test epoch ##################
 
-            if self.test_epoch > 0 and (epoch % self.test_epoch == 0 or epoch == self.config.epochs_num - 1):
+            if self.test_epoch > 0 and (start_epoch + epoch % self.test_epoch == 0 or  start_epoch + epoch == self.config.epochs_num - 1):
                 test_Dl_iter = iter(self.test_dataloader)
                 self.test_(modelG_ema, Embedder, test_Dl_iter, lambda_t)
 
             ############# logging experiment data #############
 
             if self.config.log_epoch > 0 and (
-                    epoch % self.config.log_epoch == 0 or epoch == self.config.epochs_num - 1) and is_main_gpu():
-                self.log(true_epoch+1)
+                     start_epoch + epoch % self.config.log_epoch == 0 or  start_epoch + epoch == self.config.epochs_num - 1) and is_main_gpu():
+                self.log(start_epoch + epoch)
 
             ############### plotting distribution at plot epoch ############
             if self.plot_epoch > 0 and (
-                    epoch % self.plot_epoch == 0 or epoch == self.config.epochs_num - 1) and is_main_gpu():
-                self.plot(true_epoch+1, modelG_ema, Embedder, cond0, samples_z, lambda_t)
+                    start_epoch + epoch % self.plot_epoch == 0 or start_epoch + epoch == self.config.epochs_num - 1) and is_main_gpu():
+                self.plot(start_epoch + epoch, modelG_ema, Embedder, cond0, samples_z, lambda_t)
                 
                 
             if self.config.total_steps > 1000:

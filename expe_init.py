@@ -3,7 +3,7 @@
 """
 Created on Thu Nov 24 10:43:56 2022
 
-@author: brochetc
+@author: gandonb, rabaultj, poulainauzeaul,brochetc
 
 WARNING : this file interfaces several processes
      ---> experiment files configuration (handled by the main script here)
@@ -21,7 +21,6 @@ from itertools import product
 import subprocess
 import yaml
 from pathlib import Path
-
 
 def check_file(file):
     # Search/download file (if necessary) and return path
@@ -83,40 +82,6 @@ def str2inttuple(li):
     else : 
         raise ValueError("li argument must be a string or a list, not '{}'".format(type(li)))
 
-def str2VQparams(str):
-    """
-    convert string to dictionary
-    """
-
-    dico = {}
-
-    return dico
-
-
-# very_small_exp = True
-# small_exp = False
-# normal_exp_steps = 150000
-
-# ensemble={'--batch_size':[16], 
-#           '--lr_D': [0.002],'--lr_G' : [0.002],
-#           '--g_channels':[3], '--d_channels':[3],
-#           '--var_names' : ["['u','v','t2m','z500','t850','tpw850']"], 
-#           '--total_steps' :[20 if very_small_exp else (1000 if small_exp else normal_exp_steps)], # 'rr', 'orog' ['u','v','t2m']
-#           '--conditional':[False],
-#           '--path_batch_shrink' : [2],
-#           '--model' :['stylegan2'], '--train_type' : ['stylegan'],
-#           '--latent_dim' : [512],
-#           '--pretrained_model' : [0],
-#           '--use_noise' : [True],
-#           #'--crop_indexes' : ["[0,256,0,256]"],
-#           '--crop_indexes' : ["[78,206,55,183]"]
-# }
-
-# monovar = ("['u','v','t2m']" not in ensemble['--var_names'])
-# use_noise = ensemble['--use_noise'][0]
-# all_domain = True if sum(str2intlist(ensemble['--crop_indexes'][0])[1::2])-\
-#                         sum(str2intlist(ensemble['--crop_indexes'][0])[0::2])==512 else False
-
 def create_new(keyword):
     """
     create new directory with given keyword, when there are already other directories with
@@ -132,28 +97,17 @@ class AttrDict(object):
         self.__dict__.update(_dict)
 
 
-def read_yamlconfig(config_file_abs_path) : 
-
-    print("config_file_abs_path", config_file_abs_path)
-
-    if Path(config_file_abs_path).is_file() :  # exists
+def read_yamlconfig(config_file_abs_path):
+    if Path(config_file_abs_path).is_file():  # exists
+        print("config file found")
         with open(config_file_abs_path) as f: 
             optyaml = yaml.safe_load(f)  # load hyps
-
-    very_small_exp = optyaml["very_small_exp"]
-
-    small_exp = optyaml["small_exp"]
-    normal_exp_steps = optyaml["normal_exp_steps"]
+    else:
+        raise NameError(f"config file {config_file_abs_path} not found")
     ensemble = optyaml["ensemble"]
-    monovar = ("['u','v','t2m']" not in ensemble['--var_names'])
-    use_noise = ensemble['--use_noise'][0]
-    all_domain = True if sum(str2intlist(ensemble['--crop_indexes'][0])[1::2])-\
-                            sum(str2intlist(ensemble['--crop_indexes'][0])[0::2])==512 else False
-    VQparams = optyaml["VQparams_file"]
+    return  optyaml, ensemble, config_file_abs_path
 
-    return  optyaml, very_small_exp, small_exp, normal_exp_steps, ensemble, monovar, use_noise, all_domain , config_file_abs_path
-
-def get_dirs(home_dir):
+def get_dirs(config_dir):
 
     
     """
@@ -164,48 +118,11 @@ def get_dirs(home_dir):
     
     parser=argparse.ArgumentParser()
     parser.add_argument('--config_file', type=str, \
-                        default='configs/very_small_exp_256.yaml')
+                        default='very_small_exp_gandonb.yaml')
     args =   parser.parse_args()
-    config_file_abs_path = home_dir + "/" + args.config_file 
+    config_file_abs_path = f"{config_dir}{args.config_file}"
 
     return read_yamlconfig(config_file_abs_path)
-
-
-
-    # parser.add_argument('--data_dir', type=str, \
-    #                     default='/scratch/mrmn/brochetc/GAN_2D/datasets_full_indexing/IS_1_1.0_0_0_0_0_0_1024_done/')
-    #                     # '/scratch/mrmn/brochetc/GAN_2D/datasets_full_indexing/IS_1_1.0_0_0_0_0_0_256_done/'
-    # parser.add_argument('--output_dir', type=str, \
-    #                     default='/scratch/mrmn/reganc/Exp_StyleGAN/Set_2')
-    
-
-    # parser.add_argument('--mean_file', type=str, default='mean_with_8_var.npy')
-    # parser.add_argument('--max_file', type=str, default='max_with_8_var.npy')
-    # parser.add_argument('--id_file', type=str, default='IS_method_labels_8_var.csv')
-
-    # parser.add_argument('--SET_NUM', type=int, \
-    #                 default=2) # run test jobs in Set_2
-    
-    # parser.add_argument('--ensemble', type=str, \
-    #                     default='configs/very_small_exp.yaml')
-
-    # # using pretrained model modifies the behavior of dir creation
-    # parser.add_argument('--pretrained_model', type=int, default=0,\
-    #                     help='step at which pretrained model have been saved')
-    
-    # parser.add_argument('--which_experiment',type=int, default=-1,\
-    #                     help='index of the experiment to run if pretrained_model is activated') # not really used anymore
-    
-    # parser.add_argument('--max_relaunch', type=int, default=0, 
-    #                     help ='number of times we relaunch the expe after timeout')
-
-    # parser.add_argument('--auto_relaunch', type=str2bool, default=False,
-    #                     help='set to Yes if you want an automatic relaunch. Manual relaunch (e.g. from pretrained)\
-    #                     should be passed with auto_relaunch=False to prevent overwriting previous results.')
-
-    # parser.add_argument('--slurm_file', type=str, default='run_GAN.slurm',\
-    #                     help='slurm file in slurm_dir')
-
 
 def get_expe_parameters():
 
@@ -213,16 +130,17 @@ def get_expe_parameters():
 
     # Paths
     parser.add_argument('--data_dir', type=str,default="/scratch/mrmn/brochetc/GAN_2D/datasets_full_indexing/IS_1_1.0_0_0_0_0_0_256_done/" )
-    parser.add_argument('--mean_file', type=str,default="mean_with_8_var.npy" )
-    parser.add_argument('--max_file', type=str,default="max_with_8_var.npy" )
+    parser.add_argument('--mean_file', type=str, default=None )
+    parser.add_argument('--std_file', type=str, default=None )
+    parser.add_argument('--max_file', type=str, default=None )
+    parser.add_argument('--min_file', type=str, default=None )
     parser.add_argument('--id_file_train', type=str, default="IS_method_labels_8_var.csv" )
     parser.add_argument('--id_file_test', type=str, default="IS_method_labels_8_var.csv" )
-    parser.add_argument('--pretrained_model', type=int, default=0)
+    parser.add_argument('--pretrained_model', type=int, default=-1)
 
     # if not dirs["interactive"] : 
         # change output_dir default path for experiments set
-    parser.add_argument('--output_dir', type=str, \
-                        default=os.getcwd()+'/')
+    parser.add_argument('--output_dir', type=str, default=os.getcwd()+'/')
     # else : 
     #     parser.add_argument('--output_dir', type=str, \
     #                         default=dirs["output_dir"] + "gpu_play")
@@ -231,17 +149,13 @@ def get_expe_parameters():
     # Model architecture hyper-parameters
     
     parser.add_argument('--model', type=str, default='stylegan2', \
-                        choices=['resnet','resnet_aa' ,'resnet_concat', 'resnet_concat_aa', 'resnet_concat_smooth', 
-                                 'resnet_concat_bilin', 'resnet_concat_light', 'cBN_proj','cBN_proj_simple',
-                                 'resnet_concat_bilin_emb', 'resnet_concat_rough_emb', 'stylegan2', 'stylegan2_fp16','swagan'])
-    
-    
+                        choices=['stylegan2', 'stylegan2_fp16'])
     
     # choices of loss function and initialization
     parser.add_argument('--train_type', type=str, default='stylegan',\
-                        choices=['vanilla','wgan-gp', 'wgan-hinge','stylegan'])
+                        choices=['stylegan'])
     
-    
+
     # conditional arguments
     parser.add_argument('--conditional', type=str2bool, default = True)
     parser.add_argument('--condition_vars', type=str2list, default = ['u','v', 't2m'])
@@ -263,13 +177,6 @@ def get_expe_parameters():
     parser.add_argument("--channel_multiplier",type=int, default=2,
         help="channel multiplier factor for the stylegan/swagan model. config-f = 2, else = 1",
     )
-    # regularisation settings(wasserstein GAN)
-
-    parser.add_argument('--lamda_gp', type=float, default=10.0)
-    parser.add_argument('--ortho_init',type=str2bool, default=False)
-    
-    parser.add_argument('--sn_on_g', type=str2bool, default=False,\
-                        help='Apply spectral normalisation on Generator')
     
     # regularisation settings (styleGAN)
     
@@ -279,7 +186,6 @@ def get_expe_parameters():
 
     parser.add_argument( "--path_batch_shrink",type=int,default=2,
         help="batch size reducing factor for the path length regularization (reduce memory consumption)")
-    
     
     parser.add_argument("--d_reg_every",type=int,default=16,
                         help="interval of the applying r1 regularization")
@@ -327,7 +233,7 @@ def get_expe_parameters():
     parser.add_argument('--beta2_G', type=float, default=0.9)
     
     parser.add_argument('--warmup', type=str2bool, default=False)
-    parser.add_argument('--use_noise', type=bool, default=True, help="if False, doesn't use noise_inj")
+    parser.add_argument('--use_noise', type=str2bool, default=True, help="if False, doesn't use noise_inj")
     
     # Data description
     parser.add_argument('--var_names', type=str2list, default=['u','v','t2m'])#, 'orog'])
@@ -351,7 +257,6 @@ def get_expe_parameters():
     parser.add_argument('--sample_num', type=int, default=16, help='Samples to be saved') #  if all_domain else 256,\
     
 
-
     # Misc
     parser.add_argument('--fp16_resolution', type=int, default=1000) # 1000 --> not used
     parser.add_argument('--seed', type=int, default=42, metavar='S',
@@ -374,6 +279,10 @@ def get_expe_parameters():
     parser.add_argument('--plot_step', type=int, default=5)# if very_small_exp else (1000 if small_exp else 3000)) #set to 0 if not needed
     parser.add_argument('--save_step', type=int, default=5)# if very_small_exp else (1000 if small_exp else 3000)) # set to 0 if not needed
     parser.add_argument('--test_step', type=int, default=5)# if very_small_exp else (1000 if small_exp else 3000)) #set to 0 if not needed
+
+    parser.add_argument('--config_dir', type=str, default="", help="The config files absolute path")
+    parser.add_argument('--dataset_handler_config', type=str, default="dataset_handler_config.yaml", help="The dataset_handler config file")
+    parser.add_argument('--scheduler_config', type=str, default="", help="The scheduler config file")
        
     return parser
 
@@ -388,15 +297,15 @@ def make_dicts(ensemble,  option='cartesian'):
         cross product of ensemble as list of dictionaries, each entry of shape
         {parameter : value}
     """
-
     allowed_args=set(vars(get_expe_parameters())['_option_string_actions'])
     keys=set(ensemble)
+     
     if keys - allowed_args != set():
         raise ValueError(f"Some args in ensemble are unexpected : {keys - allowed_args}")
+
     prod_list=[]
-    list_items = list(ensemble.values())
     if option=='cartesian':
-        for item in product(*(list_items)):
+        for item in product(*(list(ensemble.values()))):
             prod_list.append(dict((key[2:],i) for key, i in zip(ensemble.keys(),item)))
     return prod_list
 
@@ -404,6 +313,7 @@ def sanity_check(config) :
     """
     Perform verifications on Namespace config and adds some fields to it
     """
+    
     config.g_output_dim = config.crop_size
     config.d_input_dim = config.crop_size
     
@@ -454,7 +364,7 @@ def get_slurm_file(bytecode) :
         slurm_file_num = None
     return slurm_file, slurm_file_num
 
-def prepare_expe(config, use_pretrained = False):
+def prepare_expe(config):
     """
     create output folders in the current directory 
     for a single experiment instance
@@ -468,30 +378,31 @@ def prepare_expe(config, use_pretrained = False):
     """
     NAME = config.model+'_'+config.train_type+f'_dom_{config.crop_size[0]}_lat-dim_'+str(config.latent_dim)+'_bs_'\
     +str(config.batch_size)+'_'+str(config.lr_D)+'_'+str(config.lr_G)+'_ch-mul_'+str(config.channel_multiplier)+\
-        '_vars_'+'_'.join(str(var_name[1:-1]) for var_name in config.var_names)+f'_noise_{use_noise}'
+        '_vars_'+'_'.join(str(var_name) for var_name in config.var_names)+f'_noise_{config.use_noise}_'+f'id_reg_{config.id_reg}'
     
-    print(NAME)
+    print(f"Nom du dossier de l'expérience : {NAME}")
     
     base_dir = os.getcwd()
     if not os.path.exists(NAME):
         os.mkdir(NAME)
     os.chdir(NAME)
+    l = [k.name for k in os.scandir(os.getcwd())]
     
     INSTANCE_NUM = len(glob('*Instance*'))
     
-    if not use_pretrained :
+    print(os.getcwd())
+    if config.pretrained_model == -1:
         INSTANCE_NUM += 1
-        os.mkdir('Instance_'+str(INSTANCE_NUM))
-    
-    print('Instance num is {}'.format(INSTANCE_NUM))
-
-    os.chdir('Instance_'+str(INSTANCE_NUM))
+        os.mkdir(f"Instance_{INSTANCE_NUM}")
+    elif not Path(f"Instance_{INSTANCE_NUM}").is_dir():
+        raise ValueError(f"Parameter pretrained_model is set to {config.pretrained_model} but folder Instance_{INSTANCE_NUM} doesn't exist")
+    os.chdir(f"Instance_{INSTANCE_NUM}")
     expe_dir=os.getcwd()
-    
-    with open('ReadMe_'+str(INSTANCE_NUM)+'.txt', 'a') as f:
+    print(f"\n\nInstance num is {INSTANCE_NUM}")
+    with open(f"ReadMe_{INSTANCE_NUM}.txt", 'a') as f:
         f.write('-----------------------------------------\n')
         for arg in config.__dict__.keys():
-            f.write(arg+'\t:\t'+str(config.__dict__[arg])+'\n')
+            f.write(f"{arg}\t:\t{config.__dict__[arg]}\n")
         f.close
     if not os.path.exists('log'):
         os.mkdir('log')
@@ -520,9 +431,8 @@ def parse_Memo(where, experiment, pretrained = None):
         while param_names[0]!='batch_size' :
             param_names = lines[experiment-n].split(',')
             n+=1
-        print(param_names)
+        
         param_names[-1] = param_names[-1][:-1]
-        print(param_names)
         
         print(lines[experiment])
         ind0 = lines[experiment].find('[')
@@ -568,14 +478,14 @@ def prepare_expe_set(where, expe_list, Instance = None):
     for params in expe_list:
         
         args = ['--'+k+'='+str(v) for k,v in params.items()]
-
         # print("\n\n\n ************* prepare_expe_set")
-
         config = get_expe_parameters().parse_args(args=args)
+        if config.use_noise:
+            print("USING NOISE INJECTION")
+
         config = sanity_check(config)
         
-        NAME, expe_dir = prepare_expe(config,
-                                     use_pretrained = (config.pretrained_model>0))
+        NAME, expe_dir = prepare_expe(config)
         
         config.output_dir = expe_dir
         config_list.append(config)
@@ -595,48 +505,15 @@ def prepare_expe_set(where, expe_list, Instance = None):
 
 if __name__=="__main__":
 
-
-    # slurm_dir = os.path.dirname(os.path.realpath(__file__)) +'/slurms/'
-    # ckpt_dir = os.path.dirname(os.path.realpath(__file__))
-    # print('ckpt_dir', ckpt_dir)
-    # dirs = get_dirs()
-    # previous_sets = len(glob(dirs.output_dir+'*Set*'))
-
     home_dir = os.path.dirname(os.path.realpath(__file__))
     slurm_dir = os.path.dirname(os.path.realpath(__file__)) +'/slurms/'
-
-    dirs, very_small_exp, small_exp, normal_exp_steps, ensemble, monovar, use_noise, all_domain, config_file_abs_path = get_dirs(home_dir)
+    home_dir = f"{os.path.dirname(os.path.realpath(__file__))}"
+    slurm_dir = f"{home_dir}/slurms/"
+    config_directory = f"{home_dir}/configs/"
+    dirs, ensemble, config_file_abs_path = get_dirs(config_directory)
     dirs = AttrDict(dirs)
 
-
-    # if Path(ensemble_file).is_file() :  # exists
-    #     with open(ensemble_file) as f: 
-    #         optyaml = yaml.safe_load(f)  # load hyps
-
-    # very_small_exp = optyaml["very_small_exp"]
-    # small_exp = optyaml["small_exp"]
-    # normal_exp_steps = optyaml["normal_exp_steps"]
-    # ensemble = optyaml["ensemble"] 
-
-    # monovar = ("['u','v','t2m']" not in ensemble['--var_names'])
-    # use_noise = ensemble['--use_noise'][0]
-    # all_domain = True if sum(str2intlist(ensemble['--crop_indexes'][0])[1::2])-\
-    #                         sum(str2intlist(ensemble['--crop_indexes'][0])[0::2])==512 else False
-
-    previous_sets = len(glob(dirs.output_dir+'*Set*'))
-    
-    SET_NUM = dirs.SET_NUM #2 if very_small_exp or small_exp else \
-    #        5 if all_domain else\
-    #        3 if monovar else\
-    #        4 if not use_noise else\
-    #        1
-    
-    # je suis pas méga sûr de ce qui suit donc je commente pour garder mon arborescence
-    #if dirs.SET_NUM>0:
-    #    SET_NUM = dirs.SET_NUM
-    #else:    
-    #    SET_NUM = previous_sets+1
-    where = dirs.output_dir+'Set_'+str(SET_NUM)
+    where = f"{dirs.output_dir}Set_{dirs.SET_NUM}"
     
     if not os.path.exists(where):
         os.mkdir(where)
@@ -644,20 +521,15 @@ if __name__=="__main__":
         
     ensemble['--data_dir']=[dirs.data_dir]
     ensemble['--output_dir']=[dirs.output_dir]
-    ensemble['--mean_file']=[dirs.mean_file]
-    ensemble['--max_file']=[dirs.max_file]
     ensemble['--id_file_train']=[dirs.id_file_train]
     ensemble['--id_file_test']=[dirs.id_file_test]
-    # normalement même pas obligé de mettre cette ligne vu qu'il est déjà dans ensemble
-    ensemble['--pretrained_model']=dirs.ensemble["--pretrained_model"]
-    ensemble['--VQparams_file']=[dirs.VQparams_file]
-    
+    ensemble['--config_dir'] = [dirs.config_dir]
+    ensemble['--VQparams_file'] = [dirs.VQparams_file]
+
     if not dirs.auto_relaunch:
         expe_list = make_dicts(ensemble)
-        
         config_list = prepare_expe_set(where, expe_list)
     
-        
     else :
         
         expe_list = [ parse_Memo(where, dirs.which_experiment,
@@ -667,7 +539,7 @@ if __name__=="__main__":
     
           
     for i, params in enumerate(expe_list):
-        print('--------------------------------------------------------------')
+        print('\n\n--------------------------------------------------------------')
         print('--------------------------------------------------------------')
         print('Running experiment')
         print('--------------------------------------------------------------')
@@ -675,26 +547,23 @@ if __name__=="__main__":
         
         args = nameSpace2SlurmArg(argparse.Namespace(**params))
         
-        print('\n\n--------------------------------------------------------------')
-        print("args", args)
         print('--------------------------------------------------------------')
-
-        env_slurm ={**os.environ,
-            "HOME_DIR":home_dir,
-            "OUTPUT_DIR":dirs.output_dir, 
-            "DATA_DIR":dirs.data_dir,
-            "SLURM_SCRIPT":home_dir + "/" + dirs.slurm_docker_run_perso,
-            "PYTHON_SCRIPT":home_dir +  "/"+ dirs.main_file, 
-            "CONFIG_FILE": config_file_abs_path,
+        print(f"args: {args}")
+        print('--------------------------------------------------------------')
+        env_slurm = {**os.environ,
+            "RUNAI_GRES": f'gpu:v100:{dirs.nb_gpus}',
+            "PYTHON_SCRIPT":home_dir +  "/"+ dirs.main_file,
         } 
-        print("env_slurm SLURM_SCRIPT", env_slurm["SLURM_SCRIPT"])
-        print("env_slurm PYTHON_SCRIPT", env_slurm["PYTHON_SCRIPT"])
+        print(f"env_slurm RUNAI_GRES (nb of gpus): {env_slurm['RUNAI_GRES']}")
+        print(f"env_slurm PYTHON_SCRIPT: {env_slurm['PYTHON_SCRIPT']}")
         
-        sbatch_output = subprocess.run(['sbatch',slurm_dir+dirs.slurm_file, args], capture_output=True,  env=env_slurm)
+        print(type(slurm_dir), type(dirs.slurm_file))
+        os.chdir(home_dir)
+        sbatch_output = subprocess.run(['runai' ,'sbatch','torchrun',f'--nproc_per_node={dirs.nb_gpus}','--rdzv-id=${SLURM_JOB_ID}','--rdzv-backend=c10d','--rdzv-endpoint=127.0.0.1:0',env_slurm["PYTHON_SCRIPT"], args.replace("|"," ")], env=env_slurm, capture_output=True)
         
         slurm_file, slurm_file_num = get_slurm_file(sbatch_output)
         
-        slurm_file = where +'/'+ slurm_file 
+        slurm_file = f"{where}/{slurm_file}" 
         
         print(slurm_file) # this line is crucial ! do not delete !!!!!
          
@@ -705,16 +574,15 @@ if __name__=="__main__":
         
         if  slurm_file is not None and dirs.max_relaunch>0:
 
-            output_file = where+'/checkpoint_log_{}.txt'.format(slurm_file_num)
+            output_file = f"{where}/checkpoint_log_{slurm_file_num}.txt"
 
-            f  = open(output_file, 'w')
+            f = open(output_file, 'w')
             f.write('Checkpoint loading\n')
             f.close()
-            
             #f = open(output_file,'a')
             #subprocess.Popen(['bash',home_dir+'/checkpoints_manager.sh',
             #                config_list[i].output_dir,slurm_file,str(dirs.SET_NUM),str(dirs.max_relaunch),str(timeout)], stdout=f)
             with open(output_file,'a') as f :
                 subprocess.run(['bash',home_dir+'/checkpoints_manager.sh',
-                config_list[i].output_dir,slurm_file,str(SET_NUM),str(dirs.max_relaunch),str(timeout)],timeout=timeout, stdout=f)
+                config_list[i].output_dir,slurm_file,str(dirs.SET_NUM),str(dirs.max_relaunch),str(timeout)],timeout=timeout, stdout=f)
             # j'ai changé de dirs.set_num à set_num encore une fois pour garder mon arboresecnce -> à discuter pour next réu

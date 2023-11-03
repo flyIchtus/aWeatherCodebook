@@ -96,7 +96,7 @@ def g_path_regularize(fake_img, latents, mean_path_length, decay=0.01):
 # TODO : augmentation implementation
 # TODO : conditional setup
 
-def Discrim_Step_StyleGAN(samples, cond, modelD, modelG,lambda_t,
+def Discrim_Step_StyleGAN(samples, y_cond, y_target, modelD, modelG,lambda_t,
                           latent_dim,
                           mixing = 0
                          ):
@@ -107,12 +107,10 @@ def Discrim_Step_StyleGAN(samples, cond, modelD, modelG,lambda_t,
 
         noise = mixing_noise(samples.shape[0], latent_dim, mixing)
         with torch.no_grad():
-            
-            fake, _, _ = modelG(noise, cond, lambda_t)
+            fake, _, _ = modelG(noise, y_cond, lambda_t) # y_cond used to create condition for G
         
-        
-        fake_pred = modelD(fake, cond, lambda_t)
-        real_pred = modelD(samples, cond, lambda_t)
+        fake_pred = modelD(fake, samples, y_target, lambda_t) # samples unused in this call; y_target used to provide a match
+        real_pred = modelD(samples, samples, y_target, lambda_t) # samples in 2d position unused in this call
         
         d_loss = d_logistic_loss(real_pred, fake_pred)
 
@@ -129,13 +127,13 @@ def Discrim_Step_StyleGAN(samples, cond, modelD, modelG,lambda_t,
         
         return loss_dict
 
-def Discrim_Regularize(samples, cond, modelD, r1, d_reg_every, lambda_t) : 
+def Discrim_Regularize(samples, cond, y_target, modelD, r1, d_reg_every, lambda_t) : 
     
     loss_dict = {}
     
     samples.requires_grad = True
 
-    real_pred = modelD(samples, cond, lambda_t)
+    real_pred = modelD(samples, cond, y_target, lambda_t)
     r1_loss = d_r1_loss(real_pred, samples)
 
     for param in modelD.parameters():
@@ -148,13 +146,14 @@ def Discrim_Regularize(samples, cond, modelD, r1, d_reg_every, lambda_t) :
     
     return loss_dict
 
-def Instance_Discrim_Reg(samples, cond, modelD, id_reg, d_reg_every, lambda_t, temperature):
+def Instance_Discrim_Reg(samples, cond, y_cond, modelD, id_reg, d_reg_every, lambda_t, temperature):
 
     loss_dict = {}
 
     samples.requires_grad = True
 
-    contrast_loss = modelD(samples, cond, lambda_t, instance_disc=True, temperature=temperature)
+    contrast_loss = modelD(samples, cond, y_cond, lambda_t, instance_disc=True, temperature=temperature).mean()
+
     for param in modelD.parameters():
         param.grad=None
 
@@ -165,7 +164,7 @@ def Instance_Discrim_Reg(samples, cond, modelD, id_reg, d_reg_every, lambda_t, t
     return loss_dict
 
 def Generator_Step_StyleGAN(samples,
-                            cond,
+                            y_cond, y_target,
                             modelD, 
                             modelG, lambda_t,
                             latent_dim,
@@ -179,10 +178,9 @@ def Generator_Step_StyleGAN(samples,
     
     noise = mixing_noise(samples.shape[0], latent_dim, mixing)
     
-    fake, _, _ = modelG(noise, cond, lambda_t)
+    fake, _, _ = modelG(noise, y_cond, lambda_t)
 
-
-    fake_pred = modelD(fake, cond, lambda_t)
+    fake_pred = modelD(fake, fake, y_target, lambda_t) # fake in 2d position is unused in this call, y_target used to provide a match
     g_loss = g_nonsaturating_loss(fake_pred)
 
     loss_dict["g"] = g_loss
